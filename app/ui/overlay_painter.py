@@ -1,8 +1,10 @@
 # SQUAT/app/ui/overlay_painter.py
 from dataclasses import dataclass, field
-from typing import Tuple, Optional
+from typing import Optional, Tuple
+
+from PySide6.QtWidgets import QWidget, QLabel, QGraphicsOpacityEffect
 from PySide6.QtGui import QPainter, QFont, QColor, QPainterPath, QPen, QImage
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QPoint, QPropertyAnimation, QEasingCurve, QVariantAnimation
 
 @dataclass
 class TextStyle:
@@ -36,11 +38,11 @@ def draw_text(img: QImage, text: str, x: int, y: int, style: TextStyle):
     painter.fillPath(path, style.color)
     painter.end()
 
-def draw_count_top_left(img: QImage, count: int, style: Optional[TextStyle] = None):
+def draw_count_top_left(img: QImage, count: int, type: str, style: Optional[TextStyle] = None):
     if style is None:
         base_px = max(28, img.width() // 18)
         style = TextStyle(px=base_px, margin=int(base_px*0.6))
 
     x = style.margin
     y = style.margin + style.px   # addText는 베이스라인 기준이므로 px만큼 내려서
-    draw_text(img, f"COUNT {count}", x, y, style)
+    draw_text(img, f"{type}: {count}", x, y, style)

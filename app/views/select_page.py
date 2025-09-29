@@ -12,7 +12,6 @@ class WorkoutSelectPage(PageBase):
         self.btn_pushup = QPushButton("Push up")
         self.btn_soon   = QPushButton("Update soon")
 
-        # 버튼 꽉 차게
         for b in (self.btn_squat, self.btn_plank, self.btn_pushup, self.btn_soon):
             b.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
