@@ -1,4 +1,4 @@
-# app.py
+# main.py
 import sys
 from PySide6.QtWidgets import QApplication, QMainWindow
 from PySide6.QtGui import QShortcut, QKeySequence
@@ -22,7 +22,6 @@ class MainWindow(QMainWindow):
         self.router.register("select", lambda: WorkoutSelectPage())
         self.router.register("squat", lambda: SquatPage())
 
-        # 단축키
         QShortcut(QKeySequence(Qt.Key_F11), self).activated.connect(self._toggle_fullscreen)
         QShortcut(QKeySequence(Qt.Key_Escape), self).activated.connect(self.showNormal)
         QShortcut(QKeySequence(Qt.Key_F1), self).activated.connect(lambda: self.router.navigate("start"))
