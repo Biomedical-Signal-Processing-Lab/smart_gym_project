@@ -43,6 +43,21 @@ class SquatPage(PageBase):
         root.addLayout(top)
         root.addWidget(self.lbl_status) 
 
+        # ============ 운동 정보 기록 ===================
+        self.btn_end = QPushButton("운동 종료")
+        btn_row = QHBoxLayout()
+        btn_row.addStretch(1)
+        btn_row.addWidget(self.btn_end)
+        btn_row.addStretch(1)
+        root.addLayout(btn_row)
+
+        self.btn_end.clicked.connect(self._end_workout)
+
+        self._session_started_ts = None
+        self._score_sum = 0.0
+        self._score_n   = 0
+
+        # ==============================================
         self.fps_f = FPSMeter(); self.fps_s = FPSMeter()
         self.timer = QTimer(self); self.timer.timeout.connect(self._tick)
 
@@ -72,6 +87,9 @@ class SquatPage(PageBase):
             self.btn_s_stop.clicked.connect(lambda: self.ctx.cam.stop("side"))
             self._connected = True
 
+        self._session_started_ts = time.time()
+        self._score_sum = 0.0
+        self._score_n   = 0
         self.state = "UP"; self.reps = 0; self._down_frame= 0; self._up_frame = 0
 
         self._apply_processors()
@@ -179,6 +197,8 @@ class SquatPage(PageBase):
                 ang_for_color = self._min_knee_in_phase if self._min_knee_in_phase is not None else (cur_min or 180.0)
                 color = self._knee_color_by_angle(ang_for_color)
                 score = self._score_by_angle(ang_for_color)     
+                self._score_sum += float(score)
+                self._score_n   += 1
                 self.score_overlay.show_score(str(score), 100, text_qcolor=color)
                 self._min_knee_in_phase = None
 
@@ -188,6 +208,32 @@ class SquatPage(PageBase):
         s = (f"Status: {self.state} | Squat: {self.reps} | "
             f"front knees: {fmt_pair(knees_f)} | side knees: {fmt_pair(knees_s)}")
         self.lbl_status.setText(s)
+
+    def _end_workout(self):
+        ended_at = time.time()
+        duration_sec = 0.0 if self._session_started_ts is None else (ended_at - self._session_started_ts)
+        avg_score = (self._score_sum / self._score_n) if self._score_n > 0 else 0.0
+
+        # 이번 세션 요약
+        summary = {
+            "exercise": "squat",
+            "reps": int(self.reps),
+            "avg_score": round(avg_score, 1),
+            "duration_sec": int(duration_sec),
+            "started_at": self._session_started_ts,
+            "ended_at": ended_at,
+        }
+
+        self.timer.stop()
+        try:
+            self.ctx.cam.stop("front"); self.ctx.cam.stop("side")
+        except Exception:
+            pass
+
+        if hasattr(self.ctx, "goto_summary"):
+            self.ctx.goto_summary(summary)
+        else:
+            print("[WARN] ctx.goto_summary(summary) 미구현")
 
     def _update(self, name, video_label, info_label, fps_meter):
         frame = self.ctx.cam.frame(name)

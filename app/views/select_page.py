@@ -3,7 +3,7 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QL
 from PySide6.QtCore import Qt
 from core.page_base import PageBase
 
-class WorkoutSelectPage(PageBase):
+class SelectPage(PageBase):
     def __init__(self):
         super().__init__()
 

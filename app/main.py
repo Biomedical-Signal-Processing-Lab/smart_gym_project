@@ -1,4 +1,4 @@
-# main.py
+# /app/main.py
 import sys
 from PySide6.QtWidgets import QApplication, QMainWindow
 from PySide6.QtGui import QShortcut, QKeySequence
@@ -7,7 +7,8 @@ from core.context import AppContext
 from core.router import Router
 from views.start_page import StartPage
 from views.squat_page import SquatPage
-from views.select_page import WorkoutSelectPage
+from views.select_page import SelectPage
+from views.summary_page import SummaryPage
 
 class MainWindow(QMainWindow):
     def __init__(self, ctx):
@@ -16,11 +17,12 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("운동 분석")
         self.router = Router(ctx, parent=self)
         self.setCentralWidget(self.router)
+        self.ctx.set_router(self.router)
 
-        # 페이지 등록
         self.router.register("start", lambda: StartPage())
-        self.router.register("select", lambda: WorkoutSelectPage())
+        self.router.register("select", lambda: SelectPage())
         self.router.register("squat", lambda: SquatPage())
+        self.router.register("summary", lambda: SummaryPage())
 
         QShortcut(QKeySequence(Qt.Key_F11), self).activated.connect(self._toggle_fullscreen)
         QShortcut(QKeySequence(Qt.Key_Escape), self).activated.connect(self.showNormal)

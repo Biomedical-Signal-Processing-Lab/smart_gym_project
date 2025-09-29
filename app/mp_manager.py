@@ -1,4 +1,3 @@
-# ===================================================================
 # mp_manager.py
 import cv2
 import time 
@@ -19,11 +18,6 @@ def _angle_deg(a, b, c):
     return float(np.degrees(np.arccos(cos)))
 
 class PoseProcessor:
-    """
-    MediaPipe Pose를 이용해 입력 프레임 위에 스켈레톤을 그려 반환.
-    - 인스턴스마다 mp_pose.Pose 솔루션을 보유(스레드 안전)
-    - process(frame: BGR) -> BGR
-    """
     def __init__(
         self,
         model_complexity: int = 1,

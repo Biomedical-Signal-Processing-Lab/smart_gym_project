@@ -8,24 +8,30 @@ class Router(QStackedWidget):
     def __init__(self, ctx, parent=None):
         super().__init__(parent)
         self.ctx = ctx
-        self._factories: Dict[str, Callable[[], PageBase]] = {}
-        self._pages: Dict[str, PageBase] = {}
+        self._factories = {}
+        self._instances = {}
 
-    def register(self, name: str, factory: Callable[[], PageBase]):
+    def register(self, name, factory):
         self._factories[name] = factory
 
-    def navigate(self, name: str):
-        cur = self.currentWidget()
-        if isinstance(cur, PageBase):
-            cur.on_leave(self.ctx)
-
-        if name not in self._pages:
+    def navigate(self, name):
+        # 인스턴스 없으면 생성
+        page = self._instances.get(name)
+        if page is None:
             page = self._factories[name]()
-            self._pages[name] = page
+            self._instances[name] = page
             self.addWidget(page)
 
-        page = self._pages[name]
+        # on_leave / on_enter 호출
+        prev = self.currentWidget()
+        if prev and hasattr(prev, "on_leave"):
+            try: prev.on_leave(self.ctx)
+            except Exception: pass
+
         self.setCurrentWidget(page)
-        # 새 페이지 on_enter 호출
-        if isinstance(page, PageBase):
-            page.on_enter(self.ctx)
+
+        if hasattr(page, "on_enter"):
+            try: page.on_enter(self.ctx)
+            except Exception: pass
+
+        return page

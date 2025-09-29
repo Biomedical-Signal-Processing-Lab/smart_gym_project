@@ -1,4 +1,3 @@
-# ===================================================================
 # camera_manager.py 
 import cv2, threading, time
 from copy import deepcopy
