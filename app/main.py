@@ -6,25 +6,27 @@ from PySide6.QtCore import Qt
 from core.context import AppContext
 from core.router import Router
 from views.start_page import StartPage
-from views.video_page import VideoPage
+from views.squat_page import SquatPage
+from views.select_page import WorkoutSelectPage
 
 class MainWindow(QMainWindow):
     def __init__(self, ctx):
         super().__init__()
         self.ctx = ctx
-        self.setWindowTitle("최고의 스쿼트")
+        self.setWindowTitle("운동 분석")
         self.router = Router(ctx, parent=self)
         self.setCentralWidget(self.router)
 
         # 페이지 등록
         self.router.register("start", lambda: StartPage())
-        self.router.register("video", lambda: VideoPage())
+        self.router.register("select", lambda: WorkoutSelectPage())
+        self.router.register("squat", lambda: SquatPage())
 
         # 단축키
         QShortcut(QKeySequence(Qt.Key_F11), self).activated.connect(self._toggle_fullscreen)
         QShortcut(QKeySequence(Qt.Key_Escape), self).activated.connect(self.showNormal)
         QShortcut(QKeySequence(Qt.Key_F1), self).activated.connect(lambda: self.router.navigate("start"))
-        QShortcut(QKeySequence(Qt.Key_F2), self).activated.connect(lambda: self.router.navigate("video"))
+        QShortcut(QKeySequence(Qt.Key_F2), self).activated.connect(lambda: self.router.navigate("squat"))
 
         self.resize(800, 800)
         self.router.navigate("start")

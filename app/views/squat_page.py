@@ -14,7 +14,7 @@ class FPSMeter:
         if len(self.ts)<2: return 0.0
         dt=self.ts[-1]-self.ts[0]; return 0.0 if dt<=0 else (len(self.ts)-1)/dt
 
-class VideoPage(PageBase):
+class SquatPage(PageBase):
     def __init__(self):
         super().__init__()
         self.proc_front = PoseProcessor(model_complexity=1, name="pose_front")
@@ -51,7 +51,6 @@ class VideoPage(PageBase):
         # 초기 프로세서 장착
         self._apply_processors()
         self.ctx.cam.start("front"); self.ctx.cam.start("side")
-
         self.timer.start(30)
 
     def on_leave(self, ctx):
