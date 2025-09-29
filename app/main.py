@@ -14,7 +14,7 @@ class MainWindow(QMainWindow):
     def __init__(self, ctx):
         super().__init__()
         self.ctx = ctx
-        self.setWindowTitle("운동 분석")
+        self.setWindowTitle("헬스왕")
         self.router = Router(ctx, parent=self)
         self.setCentralWidget(self.router)
         self.ctx.set_router(self.router)
