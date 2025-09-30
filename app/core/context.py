@@ -5,6 +5,7 @@ from core.face_service import FaceService
 from core.config import CAMERA_MAP, WIDTH, HEIGHT, FPS
 from db.database import create_engine_and_session, init_db
 from core.face_service import FaceService
+from db.models import WorkoutSession
 
 class AppContext:
     def __init__(self):
@@ -65,3 +66,35 @@ class AppContext:
 
     def is_logged_in(self) -> bool:
         return self.current_user_id is not None
+    
+    def save_workout_session(self, summary: dict):
+        """
+        summary 예:
+        {
+            "exercise": "squat",
+            "reps": 12,
+            "avg_score": 87.5,
+            "duration_sec": 95,
+            "started_at": 1738200000.0,  
+            "ended_at":   1738200095.0
+        }
+        """
+        if not self.is_logged_in():
+            return
+
+        from datetime import datetime
+        started = summary.get("started_at")
+        ended   = summary.get("ended_at")
+
+        with self.SessionLocal() as s:
+            sess = WorkoutSession(
+                user_id=self.current_user_id,
+                exercise=summary.get("exercise", "unknown"),
+                reps=int(summary.get("reps", 0)),
+                avg_score=float(summary.get("avg_score", 0.0)),
+                duration_sec=int(summary.get("duration_sec", 0)),
+                started_at=datetime.fromtimestamp(started) if started else None,
+                ended_at=datetime.fromtimestamp(ended) if ended else None,
+            )
+            s.add(sess)
+            s.commit()

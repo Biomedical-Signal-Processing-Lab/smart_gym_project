@@ -1,12 +1,12 @@
 # views/squat_page.py
 import cv2, time
 from collections import deque
-from PySide6.QtWidgets import QWidget, QLabel, QPushButton, QGroupBox, QHBoxLayout, QVBoxLayout, QCheckBox, QSizePolicy, QSplitter
-from PySide6.QtGui import QImage, QPixmap, QPainter, QFont, QColor, QPainterPath, QPen
+from PySide6.QtWidgets import QLabel, QPushButton, QGroupBox, QHBoxLayout, QVBoxLayout, QCheckBox
+from PySide6.QtGui import QImage, QPixmap, QColor
 from PySide6.QtCore import QTimer, Qt
 from core.page_base import PageBase
 from core.mp_manager import PoseProcessor
-from ui.overlay_painter import draw_count_top_left, TextStyle
+from ui.overlay_painter import draw_count_top_left
 from ui.score_painter import ScoreOverlay
 
 class FPSMeter:
@@ -80,6 +80,9 @@ class SquatPage(PageBase):
 
     def on_enter(self, ctx):
         self.ctx = ctx
+        self.score_overlay.setGeometry(self.rect()) 
+        self.score_overlay.raise_()
+
         if not self._connected:
             self.btn_f_start.clicked.connect(lambda: self.ctx.cam.start("front"))
             self.btn_f_stop.clicked.connect(lambda: self.ctx.cam.stop("front"))
@@ -209,12 +212,16 @@ class SquatPage(PageBase):
             f"front knees: {fmt_pair(knees_f)} | side knees: {fmt_pair(knees_s)}")
         self.lbl_status.setText(s)
 
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        if hasattr(self, "score_overlay") and self.score_overlay is not None:
+            self.score_overlay.setGeometry(self.rect())
+
     def _end_workout(self):
         ended_at = time.time()
         duration_sec = 0.0 if self._session_started_ts is None else (ended_at - self._session_started_ts)
         avg_score = (self._score_sum / self._score_n) if self._score_n > 0 else 0.0
 
-        # 이번 세션 요약
         summary = {
             "exercise": "squat",
             "reps": int(self.reps),
@@ -223,6 +230,11 @@ class SquatPage(PageBase):
             "started_at": self._session_started_ts,
             "ended_at": ended_at,
         }
+        try:
+            if hasattr(self.ctx, "save_workout_session"):
+                self.ctx.save_workout_session(summary)
+        except Exception as e:
+            print(f"[WARN] workout save failed: {e}")
 
         self.timer.stop()
         try:
