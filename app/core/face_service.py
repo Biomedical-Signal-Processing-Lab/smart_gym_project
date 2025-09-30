@@ -52,20 +52,17 @@ class FaceService:
         emb = faces[0].normed_embedding.astype(np.float32)
         return emb
 
-    def add_user_samples(self, name: str, embeddings: List[np.ndarray]) -> None:
-        """
-        신규 사용자 생성(없으면) + 임베딩들 저장.
-        """
+    def add_user_samples(self, name: str, embeddings: List[np.ndarray]) -> int:
         safe = (name or "").strip()
         if not safe:
             raise ValueError("빈 이름은 등록할 수 없습니다.")
+        if not embeddings:
+            raise ValueError("임베딩이 비어 있습니다.")
 
         with self.SessionLocal() as s:
-            user = s.query(User).filter_by(name=safe).one_or_none()
-            if user is None:
-                user = User(name=safe)
-                s.add(user)
-                s.flush()  # user.id 확보
+            user = User(name=safe)
+            s.add(user)
+            s.flush()  
 
             for emb in embeddings:
                 emb = np.asarray(emb, dtype=np.float32)
@@ -75,10 +72,14 @@ class FaceService:
                     embedding=emb.tobytes(),
                 )
                 s.add(fe)
+
             s.commit()
+            uid = user.id
 
         # 저장 이후 캐시 갱신
         self._rebuild_cache()
+        return uid
+
 
     def match(self, emb: np.ndarray, threshold: float = 0.40) -> Tuple[Optional[str], float]:
         """

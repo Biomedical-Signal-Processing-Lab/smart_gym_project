@@ -106,12 +106,18 @@ class LoginPage(PageBase):
 
         emb = self.ctx.face.detect_and_embed(frame)
         if emb is None:
-            QMessageBox.information(self, "안내", "얼굴을 찾지 못했습니다. 다시 시도해 주세요.")
+            self.info.setText("얼굴을 찾지 못했습니다. 다시 시도해 주세요.")
             return
 
-        name, score = self.ctx.face.match(emb, threshold=0.50)  # 초기엔 0.40 정도로
+        name, score = self.ctx.face.match(emb, threshold=0.50)
         if name:
+            with self.ctx.SessionLocal() as s:
+                from db.models import User
+                user = s.query(User).filter_by(name=name).one_or_none()
+                if user:
+                    self.ctx.set_current_user(user.id, user.name)
+
             QMessageBox.information(self, "환영합니다", f"{name} 님, 인식되었습니다. (sim={score:.3f})")
             self._goto("select")
         else:
-            QMessageBox.information(self, "안내", f"등록되지 않은 얼굴입니다. (유사도 {score:.3f})")
+            self.info.setText(f"등록되지 않은 얼굴입니다. (최대 유사도 {score:.3f})")

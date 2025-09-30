@@ -24,7 +24,6 @@ class SummaryPage(PageBase):
         self.lbl_main.setAlignment(Qt.AlignCenter)
         self.lbl_main.setStyleSheet("font-size: 18px;")
 
-        # 버튼들 (재시작/메인 등은 앱 라우팅 정책에 맞춰 연결)
         self.btn_back = QPushButton("메인으로")
         self.btn_restart = QPushButton("다시 시작")
 
@@ -38,7 +37,6 @@ class SummaryPage(PageBase):
         root.addWidget(grp)
         root.addLayout(b)
 
-        # 클릭 시 라우팅: ctx에 메서드가 있다고 가정
         self.btn_back.clicked.connect(lambda: hasattr(self, "ctx") and getattr(self.ctx, "goto_main", lambda: None)())
         self.btn_restart.clicked.connect(lambda: hasattr(self, "ctx") and getattr(self.ctx, "restart_current_exercise", lambda: None)(self.data.get("exercise")))
 

@@ -23,6 +23,9 @@ class AppContext:
         self.cam = CameraManager(CAMERA_MAP, WIDTH, HEIGHT, FPS)
         self.router = None
         self.current_exercise = None
+
+        self.current_user_id: int | None = None
+        self.current_user_name: str | None = None
         
     def set_router(self, router):
         self.router = router
@@ -36,7 +39,7 @@ class AppContext:
 
     def goto_main(self):
         if self.router:
-            self.router.navigate("start")
+            self.router.navigate("select")
 
     def restart_current_exercise(self, ex: str | None):
         if not self.router:
@@ -45,5 +48,20 @@ class AppContext:
             self.router.navigate("squat")
         elif ex == "plank":
             self.router.navigate("plank")
+        elif ex == "lunge":
+            self.router.navigate("lunge")
+        elif ex == "pushup":
+            self.router.navigate("pushup")
         else:
             self.router.navigate("select")
+
+    def set_current_user(self, user_id: int, name: str):
+        self.current_user_id = user_id
+        self.current_user_name = name
+
+    def clear_current_user(self):
+        self.current_user_id = None
+        self.current_user_name = None
+
+    def is_logged_in(self) -> bool:
+        return self.current_user_id is not None

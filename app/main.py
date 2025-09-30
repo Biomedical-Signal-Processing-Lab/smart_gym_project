@@ -11,6 +11,7 @@ from views.select_page import SelectPage
 from views.summary_page import SummaryPage
 from views.login_page import LoginPage
 from views.enroll_page import EnrollPage
+from views.info_page import InfoPage
 
 class MainWindow(QMainWindow):
     def __init__(self, ctx):
@@ -27,6 +28,7 @@ class MainWindow(QMainWindow):
         self.router.register("summary", lambda: SummaryPage())
         self.router.register("login",  lambda: LoginPage())
         self.router.register("enroll", lambda: EnrollPage())
+        self.router.register("info",   lambda: InfoPage())
 
         QShortcut(QKeySequence(Qt.Key_F11), self).activated.connect(self._toggle_fullscreen)
         QShortcut(QKeySequence(Qt.Key_F1), self).activated.connect(lambda: self.router.navigate("start"))
