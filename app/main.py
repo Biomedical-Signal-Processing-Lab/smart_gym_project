@@ -9,6 +9,8 @@ from views.start_page import StartPage
 from views.squat_page import SquatPage
 from views.select_page import SelectPage
 from views.summary_page import SummaryPage
+from views.login_page import LoginPage
+from views.enroll_page import EnrollPage
 
 class MainWindow(QMainWindow):
     def __init__(self, ctx):
@@ -23,6 +25,8 @@ class MainWindow(QMainWindow):
         self.router.register("select", lambda: SelectPage())
         self.router.register("squat", lambda: SquatPage())
         self.router.register("summary", lambda: SummaryPage())
+        self.router.register("login",  lambda: LoginPage())
+        self.router.register("enroll", lambda: EnrollPage())
 
         QShortcut(QKeySequence(Qt.Key_F11), self).activated.connect(self._toggle_fullscreen)
         QShortcut(QKeySequence(Qt.Key_Escape), self).activated.connect(self.showNormal)

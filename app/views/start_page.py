@@ -49,23 +49,33 @@ class StartPage(PageBase):
             text-shadow: 0 1px 4px rgba(0,0,0,0.5);
         """)
 
-        self.btn_start = QPushButton("시작하기")
-        self.btn_start.setFixedHeight(48)
-        self.btn_start.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        self.btn_start.clicked.connect(self._go_select)
-        self.btn_start.setStyleSheet("""
-            QPushButton { padding: 8px 24px; font-size: 25px; background: rgba(255,255,255,0.9);
-                          color: black; border: none; border-radius: 8px; }
-            QPushButton:hover { background: rgba(255,255,255,1.0); }
-        """)
+        self.btn_login  = QPushButton("로그인")
+        self.btn_signup = QPushButton("회원가입")
+
+        for b in (self.btn_login, self.btn_signup):
+            b.setFixedHeight(48)
+            b.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+            b.setStyleSheet("""
+                QPushButton {
+                    padding: 8px 24px; font-size: 25px; background: rgba(255,255,255,0.9);
+                    color: black; border: none; border-radius: 8px;
+                }
+                QPushButton:hover { background: rgba(255,255,255,1.0); }
+            """)
+
+        self.btn_login.clicked.connect(self._go_login)
+        self.btn_signup.clicked.connect(self._go_enroll)
 
         overlay = QWidget(self)
         ov = QVBoxLayout(overlay)
         ov.setContentsMargins(24, 24, 24, 24)
         ov.setSpacing(12)
+
         ov.addStretch(2); ov.addWidget(title); ov.addWidget(subtitle); ov.addStretch(1)
-        h = QHBoxLayout(); h.addStretch(1); h.addWidget(self.btn_start); h.addStretch(1)
-        ov.addLayout(h); ov.addStretch(3)
+
+        h = QHBoxLayout()
+        h.addStretch(1); h.addWidget(self.btn_login); h.addSpacing(16)
+        h.addWidget(self.btn_signup); h.addStretch(1); ov.addLayout(h); ov.addStretch(3)
         overlay.setStyleSheet("background: transparent;")
 
         stack = QStackedLayout(self)
@@ -105,12 +115,15 @@ class StartPage(PageBase):
         if status == QMediaPlayer.EndOfMedia:
             self.player.setPosition(0); self.player.play()
 
-    def _go_select(self):
+    def _go_login(self):
         router = self.parent()
-        while router and not hasattr(router, "navigate"):
-            router = router.parent()
-        if router:
-            router.navigate("select")
+        while router and not hasattr(router, "navigate"): router = router.parent()
+        if router: router.navigate("login")
+
+    def _go_enroll(self):
+        router = self.parent()
+        while router and not hasattr(router, "navigate"): router = router.parent()
+        if router: router.navigate("enroll")
 
     def on_enter(self, ctx):
         try: self.player.play()

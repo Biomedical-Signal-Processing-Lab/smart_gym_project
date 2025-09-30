@@ -5,7 +5,7 @@ from PySide6.QtWidgets import QWidget, QLabel, QPushButton, QGroupBox, QHBoxLayo
 from PySide6.QtGui import QImage, QPixmap, QPainter, QFont, QColor, QPainterPath, QPen
 from PySide6.QtCore import QTimer, Qt
 from core.page_base import PageBase
-from mp_manager import PoseProcessor
+from core.mp_manager import PoseProcessor
 from ui.overlay_painter import draw_count_top_left, TextStyle
 from ui.score_painter import ScoreOverlay
 
@@ -232,8 +232,6 @@ class SquatPage(PageBase):
 
         if hasattr(self.ctx, "goto_summary"):
             self.ctx.goto_summary(summary)
-        else:
-            print("[WARN] ctx.goto_summary(summary) 미구현")
 
     def _update(self, name, video_label, info_label, fps_meter):
         frame = self.ctx.cam.frame(name)
