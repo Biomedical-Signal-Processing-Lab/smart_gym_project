@@ -1,4 +1,4 @@
-# views/start_page.py (핵심 변경만)
+# views/start_page.py 
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, QSizePolicy, QStackedLayout
 from PySide6.QtGui import QFont, QPixmap
 from PySide6.QtCore import Qt, QUrl
@@ -34,13 +34,13 @@ class StartPage(PageBase):
 
         title = QLabel("헬스왕"); title.setAlignment(Qt.AlignCenter)
         title.setStyleSheet("""
-            color: white;
-            font-size: 75px;
-            font-weight: 800;   
+            color: black;
+            font-size: 120px;
+            font-weight: 1000;   
             text-shadow: 0 2px 6px rgba(0,0,0,0.6);
         """)
 
-        subtitle = QLabel("당신의 자세를 실시간으로 분석합니다")
+        subtitle = QLabel("")
         subtitle.setAlignment(Qt.AlignCenter)
         subtitle.setStyleSheet("""
             color: white;
@@ -53,7 +53,7 @@ class StartPage(PageBase):
         self.btn_signup = QPushButton("회원가입")
 
         for b in (self.btn_login, self.btn_signup):
-            b.setFixedHeight(48)
+            b.setFixedHeight(45)
             b.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
             b.setStyleSheet("""
                 QPushButton {
@@ -71,7 +71,10 @@ class StartPage(PageBase):
         ov.setContentsMargins(24, 24, 24, 24)
         ov.setSpacing(12)
 
-        ov.addStretch(2); ov.addWidget(title); ov.addWidget(subtitle); ov.addStretch(1)
+        ov.addSpacing(120)     
+        ov.addWidget(title)
+        ov.addWidget(subtitle)
+        ov.addStretch(20)
 
         h = QHBoxLayout()
         h.addStretch(1); h.addWidget(self.btn_login); h.addSpacing(16)

@@ -1,7 +1,7 @@
-# app/views/login_page.py
+# views/login_page.py
 import cv2
 from PySide6.QtWidgets import (
-    QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QMessageBox, QGroupBox
+    QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QMessageBox, QSizePolicy
 )
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtCore import Qt, QTimer
@@ -12,27 +12,55 @@ class LoginPage(PageBase):
         super().__init__()
         self.setObjectName("LoginPage")
 
-        self.title = QLabel("로그인 - 얼굴 인식")
+        self.title = QLabel("로그인")
         self.title.setAlignment(Qt.AlignCenter)
         self.title.setStyleSheet("font-size: 22px; font-weight: 700;")
 
-        self.video = QLabel("camera"); self.video.setMinimumSize(480, 360)
-        self.info  = QLabel("카메라를 응시해 주세요"); self.info.setAlignment(Qt.AlignCenter)
+        self.video = QLabel()
+        self.video.setAlignment(Qt.AlignCenter)
+        self.video.setMinimumSize(800, 450)
+        self.video.setStyleSheet("background: transparent; margin:0; padding:0;")
+        self.video.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
 
-        self.btn_try = QPushButton("인식 시도")
-        self.btn_back = QPushButton("처음으로")
-        self.btn_enroll = QPushButton("회원가입")
+        top = QWidget(self)
+        top_v = QVBoxLayout(top)
+        top_v.setContentsMargins(0, 0, 0, 0)
+        top_v.addWidget(self.video, 1)
 
-        b = QHBoxLayout(); b.addStretch(1); b.addWidget(self.btn_try); b.addWidget(self.btn_enroll); b.addWidget(self.btn_back); b.addStretch(1)
+        self.info  = QLabel("카메라를 정면으로 응시해 주세요")
+        self.info.setAlignment(Qt.AlignCenter)
+        self.info.setStyleSheet("font-size: 30px; color: #ddd;")
 
-        grp = QGroupBox("카메라")
-        gv = QVBoxLayout(); gv.addWidget(self.video); gv.addWidget(self.info); grp.setLayout(gv)
+        self.btn_try   = QPushButton("인식 시작")
+        self.btn_enroll= QPushButton("회원가입")
+        self.btn_back  = QPushButton("처음으로")
 
+        # 버튼 사이 간격과 정렬
+        btns = QHBoxLayout()
+        btns.setSpacing(12)
+        btns.setContentsMargins(0, 0, 0, 0)
+        btns.addStretch(1)
+        btns.addWidget(self.btn_try)
+        btns.addWidget(self.btn_enroll)
+        btns.addWidget(self.btn_back)
+        btns.addStretch(1)
+
+        bottom = QWidget(self)
+        bottom_v = QVBoxLayout(bottom)
+        bottom_v.setContentsMargins(16, 8, 16, 16)  # 하단 여백 약간
+        bottom_v.setSpacing(10)
+        bottom_v.addWidget(self.info)
+        bottom_v.addLayout(btns)
+
+        # ---- 루트 레이아웃: 상단 2, 하단 1 (즉, 2/3 : 1/3)
         root = QVBoxLayout(self)
+        root.setContentsMargins(12, 12, 12, 12)
+        root.setSpacing(12)
         root.addWidget(self.title)
-        root.addWidget(grp)
-        root.addLayout(b)
+        root.addWidget(top, 2)      # stretch 2
+        root.addWidget(bottom, 1)   # stretch 1
 
+        # ---- 시그널/타이머
         self.timer = QTimer(self); self.timer.timeout.connect(self._tick)
         self.btn_try.clicked.connect(self._recognize)
         self.btn_back.clicked.connect(lambda: self._goto("start"))
@@ -62,7 +90,13 @@ class LoginPage(PageBase):
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         h, w, ch = rgb.shape
         qimg = QImage(rgb.data, w, h, ch*w, QImage.Format_RGB888)
-        self.video.setPixmap(QPixmap.fromImage(qimg).scaled(self.video.width(), self.video.height(), Qt.KeepAspectRatio))
+
+        # 라벨 크기에 맞춰 비율 유지 확대
+        target_w = max(1, self.video.width())
+        target_h = max(1, self.video.height())
+        self.video.setPixmap(
+            QPixmap.fromImage(qimg).scaled(target_w, target_h, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        )
 
     def _recognize(self):
         frame = self.ctx.cam.frame("front")
@@ -72,7 +106,7 @@ class LoginPage(PageBase):
 
         emb = self.ctx.face.detect_and_embed(frame)
         if emb is None:
-            self.info.setText("얼굴을 찾지 못했습니다. 다시 시도해 주세요.")
+            QMessageBox.information(self, "안내", "얼굴을 찾지 못했습니다. 다시 시도해 주세요.")
             return
 
         name, score = self.ctx.face.match(emb, threshold=0.50)  # 초기엔 0.40 정도로
@@ -80,4 +114,4 @@ class LoginPage(PageBase):
             QMessageBox.information(self, "환영합니다", f"{name} 님, 인식되었습니다. (sim={score:.3f})")
             self._goto("select")
         else:
-            self.info.setText(f"등록되지 않은 얼굴입니다. (최대 유사도 {score:.3f})")
+            QMessageBox.information(self, "안내", f"등록되지 않은 얼굴입니다. (유사도 {score:.3f})")

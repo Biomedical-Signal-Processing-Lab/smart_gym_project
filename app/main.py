@@ -29,9 +29,9 @@ class MainWindow(QMainWindow):
         self.router.register("enroll", lambda: EnrollPage())
 
         QShortcut(QKeySequence(Qt.Key_F11), self).activated.connect(self._toggle_fullscreen)
-        QShortcut(QKeySequence(Qt.Key_Escape), self).activated.connect(self.showNormal)
         QShortcut(QKeySequence(Qt.Key_F1), self).activated.connect(lambda: self.router.navigate("start"))
-        QShortcut(QKeySequence(Qt.Key_F2), self).activated.connect(lambda: self.router.navigate("squat"))
+        QShortcut(QKeySequence(Qt.Key_F2), self).activated.connect(lambda: self.router.navigate("select"))
+        QShortcut(QKeySequence(Qt.Key_F3), self).activated.connect(lambda: self.router.navigate("squat"))
 
         self.resize(800, 800)
         self.router.navigate("start")
