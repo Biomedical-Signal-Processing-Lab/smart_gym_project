@@ -1,0 +1,1 @@
+# smart_gym_project
