@@ -3,8 +3,8 @@ from scipy.signal import butter, filtfilt
 
 # ===== 설정 =====
 INIT_MS = 300                # 초기 윈도우(ms)
-USE_DESC_START = False       # True로 하면 하강 시작(state==DESC_VAL) 시점 기준
-DESC_VAL = -1                # 하강 state 값: 너 환경에 맞게 -1 또는 +1
+USE_DESC_START = False       # True면 하강 시작(state==DESC_VAL) 시점 기준
+DESC_VAL = -1                # 하강 state 값: 환경에 맞게 -1 또는 +1
 
 def bandpass_lowrect_env(x, fs, lo=20, hi=100, lpf=8):
     x = x.astype(float)
@@ -18,48 +18,63 @@ def bandpass_lowrect_env(x, fs, lo=20, hi=100, lpf=8):
 
 def segment_by_rep_id(df):
     reps = []
-    rep_ids = df["rep_id"].values
-    if rep_ids.max() <= 0:
-        # fallback: DESC(-1)→ASC(+1)→STOP(0) 패턴으로 스캔
-        state = df["state"].values
-        i = 1; n = len(state)
-        while i < n:
-            while i < n and state[i] != DESC_VAL: i += 1
-            if i >= n: break
-            start = i
-            sawAsc=False
-            while i < n and state[i] == DESC_VAL: i += 1   # 하강 구간 지나감
-            while i < n and state[i] != DESC_VAL:
-                if state[i] == (-DESC_VAL): sawAsc=True    # 상승 감지
-                i += 1
-                if sawAsc and (i==n or state[i]==DESC_VAL):
-                    reps.append((start, i-1)); break
-        return reps
-    # rep_id가 증가할 때마다 닫기
-    cur_id = rep_ids[0]
-    start = 0
-    for i in range(1, len(df)):
-        if rep_ids[i] != cur_id:
-            reps.append((start, i-1))
-            start = i
-            cur_id = rep_ids[i]
-    if start < len(df):
-        reps.append((start, len(df)-1))
+    if "rep_id" in df.columns:
+        rep_ids = df["rep_id"].values
+        if rep_ids.max() > 0:
+            cur_id = rep_ids[0]; start = 0
+            for i in range(1, len(df)):
+                if rep_ids[i] != cur_id:
+                    reps.append((start, i-1))
+                    start = i; cur_id = rep_ids[i]
+            if start < len(df): reps.append((start, len(df)-1))
+            return reps
+
+    # fallback: DESC -> ASC -> (STOP or DESC) 패턴으로 찾기
+    state = df["state"].values
+    i = 1; n = len(state)
+    while i < n:
+        while i < n and state[i] != DESC_VAL: i += 1
+        if i >= n: break
+        start = i
+        sawAsc = False
+        while i < n and state[i] == DESC_VAL: i += 1
+        while i < n and state[i] != DESC_VAL:
+            if state[i] == (-DESC_VAL): sawAsc = True
+            i += 1
+            if sawAsc and (i == n or state[i] == DESC_VAL):
+                reps.append((start, i-1)); break
     return reps
 
 def main(csv_in, fs_ecg=500, outdir="."):
     df = pd.read_csv(csv_in)
 
+    # ---- 컬럼 자동 매핑 (Arduino 수집 포맷 호환) ----
+    rename_map = {}
+    if "imu_pitch_deg" not in df.columns and "pitch_deg" in df.columns:
+        rename_map["pitch_deg"] = "imu_pitch_deg"
+    if "imu_pitch_vel" not in df.columns and "pitch_vel_dps" in df.columns:
+        rename_map["pitch_vel_dps"] = "imu_pitch_vel"
+    if rename_map:
+        df = df.rename(columns=rename_map)
+
+    # 필수 컬럼 체크
+    required = ["timestamp_ms", "imu_pitch_deg", "imu_pitch_vel", "state"]
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise ValueError(f"Missing required columns after rename: {missing}")
+
     # ECG envelope
     if "ecg_env" not in df.columns:
+        if "ecg_raw" not in df.columns:
+            raise ValueError("CSV에 ecg_raw가 없습니다.")
         df["ecg_env"] = bandpass_lowrect_env(df["ecg_raw"].to_numpy(), fs_ecg)
 
     # rep segments
     reps = segment_by_rep_id(df)
 
     # arrays
-    ts = df["timestamp_ms"].to_numpy(dtype=np.int64)
-    env = df["ecg_env"].to_numpy(dtype=float)
+    ts    = df["timestamp_ms"].to_numpy(dtype=np.int64)
+    env   = df["ecg_env"].to_numpy(dtype=float)
     pitch = df["imu_pitch_deg"].to_numpy(dtype=float)
     state = df["state"].to_numpy(dtype=int)
 
@@ -68,8 +83,8 @@ def main(csv_in, fs_ecg=500, outdir="."):
         t0, t1 = ts[i0], ts[i1]
         seg_state = state[i0:i1+1]
         seg_pitch = pitch[i0:i1+1]
-        seg_env = env[i0:i1+1]
-        seg_ts = ts[i0:i1+1]
+        seg_env   = env[i0:i1+1]
+        seg_ts    = ts[i0:i1+1]
 
         # tempos (ms 합)
         dt_ms = np.diff(seg_ts, prepend=seg_ts[0])
@@ -87,18 +102,15 @@ def main(csv_in, fs_ecg=500, outdir="."):
 
         int_desc = seg_int(seg_state == DESC_VAL)
         int_asc  = seg_int(seg_state == -DESC_VAL)
-        pk_desc = float(np.max(seg_env[seg_state == DESC_VAL])) if np.any(seg_state == DESC_VAL) else float(np.max(seg_env)) if seg_env.size else 0.0
-        pk_asc  = float(np.max(seg_env[seg_state == -DESC_VAL])) if np.any(seg_state == -DESC_VAL) else float(np.max(seg_env)) if seg_env.size else 0.0
+        pk_desc  = float(np.max(seg_env[seg_state == DESC_VAL])) if np.any(seg_state == DESC_VAL) else (float(np.max(seg_env)) if seg_env.size else 0.0)
+        pk_asc   = float(np.max(seg_env[seg_state == -DESC_VAL])) if np.any(seg_state == -DESC_VAL) else (float(np.max(seg_env)) if seg_env.size else 0.0)
 
-        # 초기 300ms 평균값 (기본: rep 시작 기준)
+        # 초기 300ms 평균값
         if USE_DESC_START:
             idx_desc = np.where(seg_state == DESC_VAL)[0]
-            if idx_desc.size > 0:
-                t_start = int(seg_ts[idx_desc[0]])             # 하강 시작 시각
-            else:
-                t_start = int(t0)                               # fallback
+            t_start = int(seg_ts[idx_desc[0]]) if idx_desc.size > 0 else int(t0)
         else:
-            t_start = int(t0)                                   # rep 시작 시각
+            t_start = int(t0)
 
         win_end = min(t_start + INIT_MS, int(t1))
         mask_init = (seg_ts >= t_start) & (seg_ts <= win_end)
@@ -114,7 +126,7 @@ def main(csv_in, fs_ecg=500, outdir="."):
             "env_int_asc": float(int_asc),
             "env_peak_desc": pk_desc,
             "env_peak_asc": pk_asc,
-            "env_init_mean": env_init_mean,   # ★ 추가된 컬럼
+            "env_init_mean": env_init_mean,
         })
 
     # save
