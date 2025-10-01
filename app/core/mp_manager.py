@@ -10,7 +10,6 @@ mp_drawing = mp.solutions.drawing_utils
 mp_styles = mp.solutions.drawing_styles
 
 def _angle_deg(a, b, c):
-    # a(hip) - b(knee) - c(ankle) 에서 무릎 각도 계산
     v1 = a - b; v2 = c - b
     n1 = np.linalg.norm(v1); n2 = np.linalg.norm(v2)
     if n1 < 1e-6 or n2 < 1e-6: return None
@@ -37,8 +36,8 @@ class PoseProcessor:
             min_detection_confidence=min_detection_confidence,
             min_tracking_confidence=min_tracking_confidence,
         )
-        self.draw_landmarks = draw_landmarks
-        self.draw_segmentation = draw_segmentation
+        self._draw_landmarks = bool(draw_landmarks)
+        self._draw_segmentation = bool(draw_segmentation)
 
         self._meta = {"ok": False}
         self._lock = Lock()
@@ -51,22 +50,30 @@ class PoseProcessor:
         self._LANK  = int(self.idx.LEFT_ANKLE)
         self._RANK  = int(self.idx.RIGHT_ANKLE)
 
+    def set_draw_landmarks(self, enabled: bool):
+        with self._lock:
+            self._draw_landmarks = bool(enabled)
+
+    def set_draw_segmentation(self, enabled: bool):
+        with self._lock:
+            self._draw_segmentation = bool(enabled)
+
     def _to_px(self, lm, w, h):
         return np.array([lm.x * w, lm.y * h], dtype=np.float32)
 
     def process(self, frame_bgr):
         h, w = frame_bgr.shape[:2]
+
+        with self._lock:
+            draw_landmarks = self._draw_landmarks
+            draw_segmentation = self._draw_segmentation
+
         img_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
         res = self.pose.process(img_rgb)
 
-        out = frame_bgr
+        out = frame_bgr  
 
-        if self.draw_segmentation and getattr(res, "segmentation_mask", None) is not None:
-            mask = (res.segmentation_mask > 0.5).astype(np.uint8) * 255
-            mask = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
-            out = cv2.addWeighted(out, 0.7, mask, 0.3, 0)
-
-        if self.draw_landmarks and getattr(res, "pose_landmarks", None):
+        if draw_landmarks and getattr(res, "pose_landmarks", None):
             mp_drawing.draw_landmarks(
                 image=out,
                 landmark_list=res.pose_landmarks,

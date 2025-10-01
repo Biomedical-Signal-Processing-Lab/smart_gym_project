@@ -1,6 +1,7 @@
 # core/camera_manager.py
 import cv2, threading, time
 from copy import deepcopy
+import subprocess
 
 def _blank_meta():
     return {
@@ -27,15 +28,36 @@ class CameraWorker(threading.Thread):
         self._latest = None
         self._latest_meta = _blank_meta()
 
-    def _open(self):
-        cap = cv2.VideoCapture(self.device_path, cv2.CAP_V4L2)
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH,  self.width)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
-        cap.set(cv2.CAP_PROP_FPS,          self.fps)
+    def _apply_camera_controls(self):
+        cmd = ["v4l2-ctl", "-d", self.device_path, "--set-ctrl=power_line_frequency=2"]
         try:
-            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+            subprocess.run(cmd, check=False,
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception:
             pass
+
+    def _open(self):
+        self._apply_camera_controls()
+
+        gst = (
+            f"v4l2src device={self.device_path} ! "
+            f"image/jpeg,framerate={self.fps}/1,width={self.width},height={self.height} ! "
+            f"jpegdec ! videoconvert ! video/x-raw,format=BGR ! "
+            f"appsink drop=true sync=false"
+        )
+        cap = cv2.VideoCapture(gst, cv2.CAP_GSTREAMER)
+        self._using_gst = bool(cap is not None and cap.isOpened())
+
+        if not self._using_gst:
+            cap = cv2.VideoCapture(self.device_path, cv2.CAP_V4L2)
+            try:
+                cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+            except Exception:
+                pass
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH,  self.width)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
+            cap.set(cv2.CAP_PROP_FPS,          self.fps)
+
         self._cap = cap
 
     def _close(self):
@@ -109,7 +131,6 @@ class CameraWorker(threading.Thread):
             except Exception:
                 pass
             self._processor_close = None
-
 
 class CameraManager:
     def __init__(self, device_path, width, height, fps):
