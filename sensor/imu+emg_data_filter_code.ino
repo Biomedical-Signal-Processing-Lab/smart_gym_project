@@ -30,7 +30,7 @@ bool INVERT_PITCH = false;                      // ⟵ 장착 반전 시 각도/
 const bool USE_GY_AS_PITCH = true;              // ⟵ true면 gy를 pitch 속도로 사용(아니면 gx 사용)
 
 // 속도 LPF 옵션 (원시 자이로 속도 그대로 쓸지 여부)
-const bool USE_VEL_LPF = false;                 // ⟵ true면 속도 1차 IIR 저역통과 활성화
+const bool USE_VEL_LPF = true;                 // ⟵ true면 속도 1차 IIR 저역통과 활성화
 const float VEL_LPF_TAU = 0.05f;                // ⟵ 속도 LPF 시정수 50ms
 
 // 가속도 LPF (EMA)
