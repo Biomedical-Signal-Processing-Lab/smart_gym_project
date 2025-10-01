@@ -1,6 +1,5 @@
 # views/squat_page.py
 import cv2, time
-from collections import deque
 from PySide6.QtWidgets import QLabel, QPushButton, QGroupBox, QHBoxLayout, QVBoxLayout, QCheckBox
 from PySide6.QtGui import QImage, QPixmap, QColor
 from PySide6.QtCore import QTimer, Qt
@@ -9,13 +8,6 @@ from core.mp_manager import PoseProcessor
 from ui.overlay_painter import draw_count_top_left
 from ui.score_painter import ScoreOverlay
 
-class FPSMeter:
-    def __init__(self, maxlen=30): self.ts=deque(maxlen=maxlen)
-    def tick(self): self.ts.append(time.time())
-    def fps(self):
-        if len(self.ts)<2: return 0.0
-        dt=self.ts[-1]-self.ts[0]; return 0.0 if dt<=0 else (len(self.ts)-1)/dt
-
 class SquatPage(PageBase):
     def __init__(self):
         super().__init__()
@@ -23,8 +15,8 @@ class SquatPage(PageBase):
         self.proc_side  = PoseProcessor(model_complexity=1, name="pose_side")
         self.skeleton_front_on = True; self.skeleton_side_on = True
 
-        self.lbl_front = QLabel("front: no frame"); self.lbl_front.setMinimumSize(300,300)
-        self.lbl_side  = QLabel("side:  no frame"); self.lbl_side.setMinimumSize(300,300)
+        self.lbl_front = QLabel("front: no frame"); self.lbl_front.setMinimumSize(400,400)
+        self.lbl_side  = QLabel("side:  no frame"); self.lbl_side.setMinimumSize(400,400)
         self.info_f = QLabel("front info: -"); self.info_s = QLabel("side info: -")
         self.lbl_status = QLabel("Status: - | Squat: 0")  
 
@@ -58,17 +50,17 @@ class SquatPage(PageBase):
         self._score_n   = 0
 
         # ==============================================
-        self.fps_f = FPSMeter(); self.fps_s = FPSMeter()
-        self.timer = QTimer(self); self.timer.timeout.connect(self._tick)
+        self.timer = QTimer(self); 
+        self.timer.timeout.connect(self._tick)
 
         self._min_knee_in_phase = None
         self.score_overlay = ScoreOverlay(self)
         self.score_overlay.setGeometry(self.rect())
         self.score_overlay.raise_()
 
-        self.FRONT_DOWN_TH = 110.0   # 정면 down
-        self.SIDE_DOWN_TH  = 110.0   # 측면 down
-        self.UP_TH         = 160.0   # up 
+        self.FRONT_DOWN_TH = 120.0   # 정면 down
+        self.SIDE_DOWN_TH  = 120.0   # 측면 down
+        self.UP_TH         = 165.0   # up 
         self.DEBOUNCE_N    = 3       # 연속 프레임 요구(노이즈 방지)
 
         self.state = "UP"            
@@ -97,10 +89,15 @@ class SquatPage(PageBase):
 
         self._apply_processors()
         self.ctx.cam.start("front"); self.ctx.cam.start("side")
-        self.timer.start(30)
+
+        if self.timer.isActive():
+            self.timer.stop()
+        interval_ms = 33  
+        self.timer.start(interval_ms)
 
     def on_leave(self, ctx):
-        self.timer.stop()
+        if self.timer.isActive():
+            self.timer.stop()
         ctx.cam.stop("front"); ctx.cam.stop("side")
 
     def _toggle_front(self, _): self._apply_processors(one="front")
@@ -120,15 +117,15 @@ class SquatPage(PageBase):
         return min(vals) if vals else None
 
     def _knee_color_by_angle(self, ang: float) -> QColor:
-        if ang <= 46:   return QColor(0, 128, 255)   # 파란색
-        if ang <= 48:   return QColor(0, 200, 0)     # 녹색
-        if ang <= 50:   return QColor(255, 255, 255) # 흰색
-        if ang <= 55:   return QColor(255, 140, 0)   # 주황
+        if ang <= 80:   return QColor(0, 128, 255)   # 파란색
+        if ang <= 85:   return QColor(0, 200, 0)     # 녹색
+        if ang <= 90:   return QColor(255, 255, 0)   # 노란색
+        if ang <= 95:   return QColor(255, 140, 0)   # 주황
         return QColor(255, 0, 0)                     # 빨강
 
     def _score_by_angle(self, ang: float) -> int: # 45~60 -> 100점 ~ 0점
-        a0, s0 = 46.0, 100.0
-        a1, s1 = 60.0, 0.0
+        a0, s0 = 75.0, 100.0
+        a1, s1 = 100.0, 0.0
         t = (ang - a0) / (a1 - a0)
         t = max(0.0, min(1.0, t))
         return int(round((1.0 - t) * s0 + t * s1))
@@ -136,7 +133,6 @@ class SquatPage(PageBase):
     @staticmethod
     def _knees_from_meta(m):
         kL, kR = m.get("knee_l_deg"), m.get("knee_r_deg")
-        # 값이 하나라도 None이면 판정X
         if kL is None or kR is None:
             return None
         return float(kL), float(kR)
@@ -159,8 +155,8 @@ class SquatPage(PageBase):
 
     # ---------------- 메인 루프 ----------------
     def _tick(self):
-        self._update("front", self.lbl_front, self.info_f, self.fps_f)
-        self._update("side",  self.lbl_side,  self.info_s, self.fps_s)
+        self._update("front", self.lbl_front, self.info_f)
+        self._update("side",  self.lbl_side,  self.info_s)
 
         mf = self.ctx.cam.meta("front") or {}
         ms = self.ctx.cam.meta("side")  or {}
@@ -209,7 +205,7 @@ class SquatPage(PageBase):
             if p is None: return "- / -"
             return f"{p[0]:.1f}° / {p[1]:.1f}°"
         s = (f"Status: {self.state} | Squat: {self.reps} | "
-            f"front knees: {fmt_pair(knees_f)} | side knees: {fmt_pair(knees_s)}")
+            f"front: {fmt_pair(knees_f)} | side: {fmt_pair(knees_s)}")
         self.lbl_status.setText(s)
 
     def resizeEvent(self, e):
@@ -245,10 +241,9 @@ class SquatPage(PageBase):
         if hasattr(self.ctx, "goto_summary"):
             self.ctx.goto_summary(summary)
 
-    def _update(self, name, video_label, info_label, fps_meter):
+    def _update(self, name, video_label, info_label):
         frame = self.ctx.cam.frame(name)
         if frame is None: return
-        fps_meter.tick()
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         h,w,ch = rgb.shape
 
@@ -257,9 +252,7 @@ class SquatPage(PageBase):
         video_label.setPixmap(QPixmap.fromImage(qimg).scaled(video_label.width(), video_label.height(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
 
         meta = self.ctx.cam.meta(name) or {}
-        fps  = fps_meter.fps()
         def fmt(x, f): return "-" if x is None else f.format(x)
-        txt = (f"FPS {fps:4.1f} | Hip y: {fmt(meta.get('hip_y_px'), '{:.0f}px')} "
-               f"({fmt(meta.get('hip_y_norm'), '{:.3f}')}) | Knee L/R: "
+        txt = ("Knee L/R: "
                f"{fmt(meta.get('knee_l_deg'), '{:5.1f}')}° / {fmt(meta.get('knee_r_deg'), '{:5.1f}')}°")
         info_label.setText(txt)

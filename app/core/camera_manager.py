@@ -32,7 +32,6 @@ class CameraWorker(threading.Thread):
         cap.set(cv2.CAP_PROP_FRAME_WIDTH,  self.width)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
         cap.set(cv2.CAP_PROP_FPS,          self.fps)
-        # MJPG 시도(지원 안 해도 무시)
         try:
             cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
         except Exception:
@@ -60,7 +59,6 @@ class CameraWorker(threading.Thread):
                     time.sleep(0.005)
                     continue
 
-                # 처리
                 if self.process_fn:
                     try:
                         if hasattr(self.process_fn, "process"):
@@ -87,7 +85,6 @@ class CameraWorker(threading.Thread):
             else:
                 time.sleep(0.01)
 
-    # 외부 API
     def start_capture(self): self._running = True
     def stop_capture(self):  self._running = False
 

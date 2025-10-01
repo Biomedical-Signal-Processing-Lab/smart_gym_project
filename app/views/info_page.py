@@ -72,7 +72,7 @@ class InfoPage(PageBase):
 
         try:
             with self.ctx.SessionLocal() as s:
-                from db.models import User, FaceEmbedding
+                from db.models import User
                 user = s.query(User).filter_by(id=self.ctx.current_user_id).one_or_none()
                 if not user:
                     self.ctx.clear_current_user()
