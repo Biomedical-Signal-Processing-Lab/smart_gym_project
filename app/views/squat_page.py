@@ -11,29 +11,37 @@ from ui.score_painter import ScoreOverlay
 class SquatPage(PageBase):
     def __init__(self):
         super().__init__()
-        self.proc_front = PoseProcessor(model_complexity=1, name="pose_front")
-        self.proc_side  = PoseProcessor(model_complexity=1, name="pose_side")
-        self.skeleton_front_on = True; self.skeleton_side_on = True
 
-        self.lbl_front = QLabel("front: no frame"); self.lbl_front.setMinimumSize(400,400)
-        self.lbl_side  = QLabel("side:  no frame"); self.lbl_side.setMinimumSize(400,400)
-        self.info_f = QLabel("front info: -"); self.info_s = QLabel("side info: -")
-        self.lbl_status = QLabel("Status: - | Squat: 0")  
+        # ----- 단일 카메라용 Pose Processor -----
+        self.proc = PoseProcessor(model_complexity=1, name="pose_camera")
+        self.skeleton_on = True
 
-        self.btn_f_start = QPushButton("Start front"); self.btn_f_stop = QPushButton("Stop front")
-        self.btn_s_start = QPushButton("Start side");  self.btn_s_stop = QPushButton("Stop side")
+        # ----- UI -----
+        self.lbl_camera = QLabel("camera: no frame"); self.lbl_camera.setMinimumSize(400, 400)
+        self.info = QLabel("camera info: -")
+        self.lbl_status = QLabel("Status: - | Squat: 0")
 
-        self.chk_front = QCheckBox("Skeleton(front)"); self.chk_front.setChecked(True); self.chk_front.stateChanged.connect(self._toggle_front)
-        self.chk_side  = QCheckBox("Skeleton(side)");  self.chk_side.setChecked(True);  self.chk_side.stateChanged.connect(self._toggle_side)
+        self.btn_start = QPushButton("Start camera")
+        self.btn_stop  = QPushButton("Stop camera")
 
-        g1=QGroupBox("front"); v1=QVBoxLayout(); v1.addWidget(self.lbl_front); v1.addWidget(self.info_f)
-        h1=QHBoxLayout(); h1.addWidget(self.btn_f_start); h1.addWidget(self.btn_f_stop); h1.addWidget(self.chk_front); v1.addLayout(h1); g1.setLayout(v1)
-        g2=QGroupBox("side");  v2=QVBoxLayout(); v2.addWidget(self.lbl_side);  v2.addWidget(self.info_s)
-        h2=QHBoxLayout(); h2.addWidget(self.btn_s_start); h2.addWidget(self.btn_s_stop); h2.addWidget(self.chk_side);  v2.addLayout(h2); g2.setLayout(v2)
-        root=QVBoxLayout(self)
-        top=QHBoxLayout(); top.addWidget(g1); top.addWidget(g2)
-        root.addLayout(top)
-        root.addWidget(self.lbl_status) 
+        self.chk_skel = QCheckBox("Skeleton(camera)")
+        self.chk_skel.setChecked(True)
+        self.chk_skel.stateChanged.connect(self._toggle_skeleton)
+
+        g = QGroupBox("camera")
+        v = QVBoxLayout()
+        v.addWidget(self.lbl_camera)
+        v.addWidget(self.info)
+        h = QHBoxLayout()
+        h.addWidget(self.btn_start)
+        h.addWidget(self.btn_stop)
+        h.addWidget(self.chk_skel)
+        v.addLayout(h)
+        g.setLayout(v)
+
+        root = QVBoxLayout(self)
+        root.addWidget(g)
+        root.addWidget(self.lbl_status)
 
         # ============ 운동 정보 기록 ===================
         self.btn_end = QPushButton("운동 종료")
@@ -42,28 +50,28 @@ class SquatPage(PageBase):
         btn_row.addWidget(self.btn_end)
         btn_row.addStretch(1)
         root.addLayout(btn_row)
-
         self.btn_end.clicked.connect(self._end_workout)
 
+        # ----- 세션/스코어 상태 -----
         self._session_started_ts = None
         self._score_sum = 0.0
         self._score_n   = 0
 
-        # ==============================================
-        self.timer = QTimer(self); 
+        # ----- 주기 타이머 -----
+        self.timer = QTimer(self)
         self.timer.timeout.connect(self._tick)
 
+        # ----- 스쿼트 판정 파라미터 -----
         self._min_knee_in_phase = None
         self.score_overlay = ScoreOverlay(self)
         self.score_overlay.setGeometry(self.rect())
         self.score_overlay.raise_()
 
-        self.FRONT_DOWN_TH = 120.0   # 정면 down
-        self.SIDE_DOWN_TH  = 120.0   # 측면 down
-        self.UP_TH         = 165.0   # up 
-        self.DEBOUNCE_N    = 3       # 연속 프레임 요구(노이즈 방지)
+        self.DOWN_TH = 120.0   # 내려갔다고 보는 무릎각 기준
+        self.UP_TH   = 165.0   # 올라왔다고 보는 무릎각 기준
+        self.DEBOUNCE_N = 3    # 연속 프레임 요구(노이즈 방지)
 
-        self.state = "UP"            
+        self.state = "UP"
         self.reps = 0
         self._down_frame = 0
         self._up_frame   = 0
@@ -72,49 +80,45 @@ class SquatPage(PageBase):
 
     def on_enter(self, ctx):
         self.ctx = ctx
-        self.score_overlay.setGeometry(self.rect()) 
+        self.score_overlay.setGeometry(self.rect())
         self.score_overlay.raise_()
 
         if not self._connected:
-            self.btn_f_start.clicked.connect(lambda: self.ctx.cam.start("front"))
-            self.btn_f_stop.clicked.connect(lambda: self.ctx.cam.stop("front"))
-            self.btn_s_start.clicked.connect(lambda: self.ctx.cam.start("side"))
-            self.btn_s_stop.clicked.connect(lambda: self.ctx.cam.stop("side"))
+            self.btn_start.clicked.connect(lambda: self.ctx.cam.start())
+            self.btn_stop.clicked.connect(lambda: self.ctx.cam.stop())
             self._connected = True
 
         self._session_started_ts = time.time()
         self._score_sum = 0.0
         self._score_n   = 0
-        self.state = "UP"; self.reps = 0; self._down_frame= 0; self._up_frame = 0
+        self.state = "UP"; self.reps = 0; self._down_frame = 0; self._up_frame = 0
 
-        self._apply_processors()
-        self.ctx.cam.start("front"); self.ctx.cam.start("side")
+        self._apply_processor()
+        self.ctx.cam.start()
 
         if self.timer.isActive():
             self.timer.stop()
-        interval_ms = 33  
-        self.timer.start(interval_ms)
+        self.timer.start(33)  
 
     def on_leave(self, ctx):
         if self.timer.isActive():
             self.timer.stop()
-        ctx.cam.stop("front"); ctx.cam.stop("side")
+        ctx.cam.stop()
 
-    def _toggle_front(self, _): self._apply_processors(one="front")
-    def _toggle_side(self, _):  self._apply_processors(one="side")
+    def _toggle_skeleton(self, _):
+        self._apply_processor()
 
-    def _apply_processors(self, one=None):
-        if one in (None,"front"):
-            self.ctx.cam.set_process("front", self.proc_front if self.chk_front.isChecked() else None)
-        if one in (None,"side"):
-            self.ctx.cam.set_process("side",  self.proc_side  if self.chk_side.isChecked()  else None)
+    def _apply_processor(self):
+        self.ctx.cam.set_process(self.proc if self.chk_skel.isChecked() else None)
 
-    # ---------------- 판별 ----------------
-    def _current_min_knee(self, knees_front, knees_side):
-        vals = []
-        if knees_front is not None: vals += list(knees_front)
-        if knees_side  is not None: vals += list(knees_side)
-        return min(vals) if vals else None
+    @staticmethod
+    def _knees_from_meta(m):
+        if not m:
+            return None
+        kL, kR = m.get("knee_l_deg"), m.get("knee_r_deg")
+        if kL is None or kR is None:
+            return None
+        return float(kL), float(kR)
 
     def _knee_color_by_angle(self, ang: float) -> QColor:
         if ang <= 80:   return QColor(0, 128, 255)   # 파란색
@@ -123,49 +127,35 @@ class SquatPage(PageBase):
         if ang <= 95:   return QColor(255, 140, 0)   # 주황
         return QColor(255, 0, 0)                     # 빨강
 
-    def _score_by_angle(self, ang: float) -> int: # 45~60 -> 100점 ~ 0점
+    def _score_by_angle(self, ang: float) -> int:  # 75~100 -> 100~0
         a0, s0 = 75.0, 100.0
-        a1, s1 = 100.0, 0.0
+        a1, s1 = 110.0, 0.0
         t = (ang - a0) / (a1 - a0)
         t = max(0.0, min(1.0, t))
         return int(round((1.0 - t) * s0 + t * s1))
 
-    @staticmethod
-    def _knees_from_meta(m):
-        kL, kR = m.get("knee_l_deg"), m.get("knee_r_deg")
-        if kL is None or kR is None:
-            return None
-        return float(kL), float(kR)
-
-    def _is_down(self, knees_front, knees_side):
-        if knees_front is None or knees_side is None:
+    # ---------------- 상태 판정 ----------------
+    def _is_down(self, knees):
+        if knees is None:
             return False
-        kLf, kRf = knees_front
-        kLs, kRs = knees_side
-        return (kLf < self.FRONT_DOWN_TH and kRf < self.FRONT_DOWN_TH and
-                kLs < self.SIDE_DOWN_TH  and kRs < self.SIDE_DOWN_TH)
+        kL, kR = knees
+        return (kL < self.DOWN_TH and kR < self.DOWN_TH)
 
-    def _is_up(self, knees_front, knees_side):
-        if knees_front is None or knees_side is None:
+    def _is_up(self, knees):
+        if knees is None:
             return False
-        kLf, kRf = knees_front
-        kLs, kRs = knees_side
-        return (kLf >= self.UP_TH and kRf >= self.UP_TH and
-                kLs >= self.UP_TH and kRs >= self.UP_TH)
+        kL, kR = knees
+        return (kL >= self.UP_TH and kR >= self.UP_TH)
 
     # ---------------- 메인 루프 ----------------
     def _tick(self):
-        self._update("front", self.lbl_front, self.info_f)
-        self._update("side",  self.lbl_side,  self.info_s)
+        self._update_video_and_info()
 
-        mf = self.ctx.cam.meta("front") or {}
-        ms = self.ctx.cam.meta("side")  or {}
+        m = self.ctx.cam.meta() or {}
+        knees = self._knees_from_meta(m)
 
-        knees_f = self._knees_from_meta(mf) 
-        knees_s = self._knees_from_meta(ms)
-
-        is_down_now = self._is_down(knees_f, knees_s)
-        is_up_now   = self._is_up(knees_f, knees_s)
+        is_down_now = self._is_down(knees)
+        is_up_now   = self._is_up(knees)
 
         if is_down_now:
             self._down_frame += 1
@@ -177,8 +167,8 @@ class SquatPage(PageBase):
             self._down_frame = 0
             self._up_frame = 0
 
-        cur_min = self._current_min_knee(knees_f, knees_s)
-        if self.state == "DOWN" and cur_min is not None:
+        if self.state == "DOWN" and knees is not None:
+            cur_min = min(knees)
             if self._min_knee_in_phase is None:
                 self._min_knee_in_phase = cur_min
             else:
@@ -187,15 +177,15 @@ class SquatPage(PageBase):
         if self.state == "UP":
             if self._down_frame >= self.DEBOUNCE_N:
                 self.state = "DOWN"
-                self._min_knee_in_phase = None   
+                self._min_knee_in_phase = None
         else:
             if self._up_frame >= self.DEBOUNCE_N:
                 self.state = "UP"
                 self.reps += 1
 
-                ang_for_color = self._min_knee_in_phase if self._min_knee_in_phase is not None else (cur_min or 180.0)
+                ang_for_color = self._min_knee_in_phase if self._min_knee_in_phase is not None else (min(knees) if knees else 180.0)
                 color = self._knee_color_by_angle(ang_for_color)
-                score = self._score_by_angle(ang_for_color)     
+                score = self._score_by_angle(ang_for_color)
                 self._score_sum += float(score)
                 self._score_n   += 1
                 self.score_overlay.show_score(str(score), 100, text_qcolor=color)
@@ -204,8 +194,9 @@ class SquatPage(PageBase):
         def fmt_pair(p):
             if p is None: return "- / -"
             return f"{p[0]:.1f}° / {p[1]:.1f}°"
+
         s = (f"Status: {self.state} | Squat: {self.reps} | "
-            f"front: {fmt_pair(knees_f)} | side: {fmt_pair(knees_s)}")
+             f"camera: {fmt_pair(knees)}")
         self.lbl_status.setText(s)
 
     def resizeEvent(self, e):
@@ -234,25 +225,33 @@ class SquatPage(PageBase):
 
         self.timer.stop()
         try:
-            self.ctx.cam.stop("front"); self.ctx.cam.stop("side")
+            self.ctx.cam.stop()
         except Exception:
             pass
 
         if hasattr(self.ctx, "goto_summary"):
             self.ctx.goto_summary(summary)
 
-    def _update(self, name, video_label, info_label):
-        frame = self.ctx.cam.frame(name)
-        if frame is None: return
+    def _update_video_and_info(self):
+        frame = self.ctx.cam.frame()
+        if frame is None:
+            return
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        h,w,ch = rgb.shape
+        h, w, ch = rgb.shape
 
-        qimg = QImage(rgb.data, w, h, ch*w, QImage.Format_RGB888).copy()
+        qimg = QImage(rgb.data, w, h, ch * w, QImage.Format_RGB888).copy()
         draw_count_top_left(qimg, self.reps, "SQUAT")
-        video_label.setPixmap(QPixmap.fromImage(qimg).scaled(video_label.width(), video_label.height(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        self.lbl_camera.setPixmap(
+            QPixmap.fromImage(qimg).scaled(
+                self.lbl_camera.width(),
+                self.lbl_camera.height(),
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation
+            )
+        )
 
-        meta = self.ctx.cam.meta(name) or {}
+        meta = self.ctx.cam.meta() or {}
         def fmt(x, f): return "-" if x is None else f.format(x)
         txt = ("Knee L/R: "
                f"{fmt(meta.get('knee_l_deg'), '{:5.1f}')}° / {fmt(meta.get('knee_r_deg'), '{:5.1f}')}°")
-        info_label.setText(txt)
+        self.info.setText(txt)

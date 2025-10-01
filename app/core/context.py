@@ -2,26 +2,24 @@
 import os
 from core.camera_manager import CameraManager
 from core.face_service import FaceService
-from core.config import CAMERA_MAP, WIDTH, HEIGHT, FPS
+from core.config import CAMERA_DEVICE, WIDTH, HEIGHT, FPS
 from db.database import create_engine_and_session, init_db
 from core.face_service import FaceService
 from db.models import WorkoutSession
 
 class AppContext:
     def __init__(self):
-        # --- DB 경로 준비 ---
         root = os.path.dirname(os.path.dirname(__file__))  
         data_root = os.path.join(root, "data")
         os.makedirs(data_root, exist_ok=True)
 
-        # --- DB 엔진/세션팩토리 생성 + 테이블 초기화 ---
         db_path = os.path.join(data_root, "app.db")
         self.engine, self.SessionLocal = create_engine_and_session(db_path)
         init_db(self.engine)
 
         self.face = FaceService(self.SessionLocal)
 
-        self.cam = CameraManager(CAMERA_MAP, WIDTH, HEIGHT, FPS)
+        self.cam = CameraManager(CAMERA_DEVICE, WIDTH, HEIGHT, FPS)
         self.router = None
         self.current_exercise = None
 
@@ -68,17 +66,6 @@ class AppContext:
         return self.current_user_id is not None
     
     def save_workout_session(self, summary: dict):
-        """
-        summary 예:
-        {
-            "exercise": "squat",
-            "reps": 12,
-            "avg_score": 87.5,
-            "duration_sec": 95,
-            "started_at": 1738200000.0,  
-            "ended_at":   1738200095.0
-        }
-        """
         if not self.is_logged_in():
             return
 

@@ -1,4 +1,4 @@
-# core/camera_manager.py 
+# core/camera_manager.py
 import cv2, threading, time
 from copy import deepcopy
 
@@ -75,13 +75,13 @@ class CameraWorker(threading.Thread):
                         if callable(get_meta):
                             m = get_meta()
                             if isinstance(m, dict):
-                                meta.update(m)  
+                                meta.update(m)
                 except Exception:
                     pass
 
                 with self._lock:
                     self._latest = frame
-                    self._latest_meta = meta  
+                    self._latest_meta = meta
             else:
                 time.sleep(0.01)
 
@@ -110,20 +110,35 @@ class CameraWorker(threading.Thread):
                 pass
             self._processor_close = None
 
-class CameraManager:
-    def __init__(self, cam_map, width, height, fps):
-        self.workers = {}
-        for name, path in cam_map.items():
-            w = CameraWorker(name, path, width, height, fps)
-            w.start()
-            self.workers[name] = w
 
-    def names(self): return list(self.workers.keys())
-    def start(self, name): self.workers[name].start_capture()
-    def stop(self, name):  self.workers[name].stop_capture()
-    def frame(self, name): return self.workers[name].get_latest()
-    def meta(self, name):  return self.workers[name].get_latest_meta()
-    def set_process(self, name, fn): self.workers[name].set_process(fn)
+class CameraManager:
+    def __init__(self, device_path, width, height, fps):
+        self.worker = CameraWorker("front", device_path, width, height, fps)
+        self.worker.start()
+
+    def names(self): 
+        return ["front"]
+
+    def start(self, name=None): 
+        self.worker.start_capture()
+
+    def stop(self, name=None):  
+        self.worker.stop_capture()
+
+    def frame(self, name=None): 
+        return self.worker.get_latest()
+
+    def meta(self, name=None):  
+        return self.worker.get_latest_meta()
+
+    def set_process(self, *args, **kwargs):
+        if len(args) == 1:
+            fn = args[0]
+        elif len(args) >= 2:
+            fn = args[1]
+        else:
+            fn = kwargs.get("fn", None)
+        self.worker.set_process(fn)
+
     def close_processors(self):
-        for w in self.workers.values():
-            w.close_processor()
+        self.worker.close_processor()

@@ -1,42 +1,45 @@
 # views/select_page.py
-from PySide6.QtWidgets import QVBoxLayout, QPushButton, QSizePolicy
+from PySide6.QtWidgets import QVBoxLayout, QWidget, QPushButton, QSizePolicy
 from PySide6.QtCore import Qt
 from core.page_base import PageBase
+from ui.topbar import TopBar
 
 class SelectPage(PageBase):
     def __init__(self):
         super().__init__()
 
+        self.topbar = TopBar(self, show_back=False)
+
         self.btn_squat  = QPushButton("스쿼트")
         self.btn_plank  = QPushButton("플랭크")
         self.btn_lunge  = QPushButton("런지")
         self.btn_pushup = QPushButton("팔굽혀펴기")
-        self.btn_info   = QPushButton("내 정보")
 
-        self._buttons = [
-            self.btn_squat,
-            self.btn_plank,
-            self.btn_lunge,
-            self.btn_pushup,
-            self.btn_info,
-        ]
+        self._buttons = [self.btn_squat, self.btn_plank, self.btn_lunge, self.btn_pushup]
 
         for b in self._buttons:
             b.setFixedHeight(60)
             b.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
-        self.btn_squat.clicked.connect(self._go_squat)
+        self.btn_squat.clicked.connect(lambda: self._goto("squat"))
         self.btn_plank.setEnabled(False)
         self.btn_lunge.setEnabled(False)
         self.btn_pushup.setEnabled(False)
-        self.btn_info.clicked.connect(self._go_info)
+
+        content = QWidget(self)
+        cv = QVBoxLayout(content)
+        cv.setContentsMargins(0, 24, 0, 24)
+        cv.addStretch(1)
+        for b in self._buttons:
+            cv.addWidget(b, alignment=Qt.AlignHCenter)
+            cv.addSpacing(20)
+        cv.addStretch(1)
 
         root = QVBoxLayout(self)
-        root.addStretch(1)
-        for b in self._buttons:
-            root.addWidget(b, alignment=Qt.AlignHCenter)  
-            root.addSpacing(20)
-        root.addStretch(1)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+        root.addWidget(self.topbar)
+        root.addWidget(content, 1)
 
         self._update_button_widths()
 
@@ -49,16 +52,9 @@ class SelectPage(PageBase):
         for b in self._buttons:
             b.setFixedWidth(target)
 
-    def _go_squat(self):
+    def _goto(self, page: str):
         router = self.parent()
         while router and not hasattr(router, "navigate"):
             router = router.parent()
         if router:
-            router.navigate("squat")
-
-    def _go_info(self):
-        router = self.parent()
-        while router and not hasattr(router, "navigate"):
-            router = router.parent()
-        if router:
-            router.navigate("info")
+            router.navigate(page)
