@@ -31,7 +31,6 @@ networkx==3.5
 numpy==1.26.4
 onnx==1.19.0
 onnxruntime==1.23.0
-onnxruntime-gpu==1.23.0
 opencv-contrib-python==4.11.0.86
 opencv-python-headless==4.9.0.80
 opt_einsum==3.4.0
