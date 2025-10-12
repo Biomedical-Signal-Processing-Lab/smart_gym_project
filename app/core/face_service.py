@@ -27,7 +27,6 @@ class FaceService:
                 self._cache.append((user.id, user.name, emb / n))
 
     def detect_and_embed(self, bgr: np.ndarray) -> np.ndarray | None:
-        """가장 큰 얼굴 1개 임베딩(L2 정규화된 ArcFace 임베딩) 반환"""
         faces = self.app.get(bgr)
         if not faces:
             return None
@@ -47,7 +46,7 @@ class FaceService:
         with self.SessionLocal() as s:
             user = User(name=safe)
             s.add(user)
-            s.flush()  # user.id 확보
+            s.flush()  
 
             for emb in embeddings:
                 emb = np.asarray(emb, dtype=np.float32)

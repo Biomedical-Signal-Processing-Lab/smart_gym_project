@@ -1,7 +1,5 @@
 # core/router.py
 from PySide6.QtWidgets import QStackedWidget
-from typing import Dict, Callable
-from core.page_base import PageBase
 
 # 페이지 등록/전환 관리
 class Router(QStackedWidget):

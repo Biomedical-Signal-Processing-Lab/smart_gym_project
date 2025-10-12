@@ -66,7 +66,6 @@ class PoseProcessor:
 
         with self._lock:
             draw_landmarks = self._draw_landmarks
-            draw_segmentation = self._draw_segmentation
 
         img_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
         res = self.pose.process(img_rgb)
