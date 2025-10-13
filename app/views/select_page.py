@@ -10,18 +10,18 @@ class SelectPage(PageBase):
 
         self.topbar = TopBar(self, show_back=False)
 
-        self.btn_squat  = QPushButton("스쿼트")
+        self.btn_exercise  = QPushButton("스쿼트")
         self.btn_plank  = QPushButton("플랭크")
         self.btn_lunge  = QPushButton("런지")
         self.btn_pushup = QPushButton("팔굽혀펴기")
 
-        self._buttons = [self.btn_squat, self.btn_plank, self.btn_lunge, self.btn_pushup]
+        self._buttons = [self.btn_exercise, self.btn_plank, self.btn_lunge, self.btn_pushup]
 
         for b in self._buttons:
             b.setFixedHeight(60)
             b.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
-        self.btn_squat.clicked.connect(lambda: self._goto("exercise"))
+        self.btn_exercise.clicked.connect(lambda: self._goto("exercise"))
         self.btn_plank.setEnabled(False)
         self.btn_lunge.setEnabled(False)
         self.btn_pushup.setEnabled(False)

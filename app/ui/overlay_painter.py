@@ -2,7 +2,7 @@
 from dataclasses import dataclass, field
 from typing import Optional
 from PySide6.QtCore import Qt, QSize, QRect, Signal, QObject
-from PySide6.QtWidgets import QWidget, QLabel, QGridLayout, QHBoxLayout, QPushButton
+from PySide6.QtWidgets import QWidget, QLabel, QGridLayout, QHBoxLayout, QVBoxLayout, QPushButton
 from PySide6.QtGui import QImage, QPixmap, QPainter, QFont, QColor, QPainterPath, QPen
 
 class VideoCanvas(QWidget):
@@ -110,92 +110,185 @@ class VideoCanvas(QWidget):
         super().resizeEvent(e)
         self._position_layers()
 
-class CanvasHUD(QObject):
-    endClicked = Signal()
-
-    def __init__(self, canvas: VideoCanvas, *, count_label_text: str = "SQUAT"):
-        super().__init__(canvas)
-        self.canvas = canvas
-        self._count_label_text = count_label_text
-
-        self._lbl_count = QLabel(f"{self._count_label_text}: 0", canvas)
-        self._lbl_count.setStyleSheet("""
-            QLabel {
-                background: rgba(0,0,0,120);
-                color: white;
-                padding: 6px 10px;
-                border-radius: 10px;
+class ExerciseCard(QWidget):
+    def __init__(self, title: str = "휴식중", parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setStyleSheet("""
+            QWidget {
+                background: rgba(0, 0, 0, 160);
+                border-radius: 22px;
+            }
+            QLabel#caption {
+                color: #BFC6CF;            
+                font-size: 20px;           
                 font-weight: 600;
-                font-size: 18px;
+                letter-spacing: 0.5px;
+                background: transparent;   
+            }
+            QLabel#titleValue {
+                color: #FFFFFF;
+                font-size: 48px;           
+                font-weight: 900;
+                letter-spacing: 1px;
+                background: transparent;   
+            }
+            QLabel#countValue {
+                color: #00E0FF;
+                font-size: 96px;          
+                font-weight: 900;
+                letter-spacing: 1px;
+                background: transparent;   
             }
         """)
-        self._btn_end = QPushButton("운동 종료", canvas)
-        self._btn_end.setStyleSheet(
-            "background: rgba(0,0,0,120); color: white; border-radius: 10px; padding: 6px 12px;"
-        )
-        self._btn_end.clicked.connect(self.endClicked.emit)
-        self.mount()
 
-    # --- API ---
-    def mount(self):
-        self.canvas.add_overlay(self._lbl_count, anchor="top-left")
-        self.canvas.add_overlay(self._btn_end, anchor="top-right")
-        self._lbl_count.show()
-        self._btn_end.show()
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(24, 20, 24, 20)
+        lay.setSpacing(6)
+
+        self._lbl_caption_title = QLabel("운동 종류", self)
+        self._lbl_caption_title.setObjectName("caption")
+        self._lbl_title_value = QLabel(title, self)
+        self._lbl_title_value.setObjectName("titleValue")
+
+        self._lbl_caption_count = QLabel("운동 횟수", self)
+        self._lbl_caption_count.setObjectName("caption")
+        self._lbl_count_value = QLabel("0", self)
+        self._lbl_count_value.setObjectName("countValue")
+
+        lay.addWidget(self._lbl_caption_title)
+        lay.addWidget(self._lbl_title_value)
+        lay.addSpacing(6)
+        lay.addWidget(self._lbl_caption_count)
+        lay.addWidget(self._lbl_count_value)
+
+    def set_title(self, title: str):
+        self._lbl_title_value.setText(title)
 
     def set_count(self, n: int):
-        self._lbl_count.setText(f"{self._count_label_text}: {n}")
+        self._lbl_count_value.setText(str(int(n)))
 
-    def set_count_visible(self, visible: bool):
-        if self._lbl_count:
-            self._lbl_count.setVisible(visible)
+class ScoreAdvicePanel(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setStyleSheet("""
+            QWidget {
+                background: rgba(0, 0, 0, 160);
+                border-radius: 22px;
+            }
+            QLabel#caption {
+                color: #BFC6CF;
+                font-size: 20px;
+                font-weight: 600;
+                letter-spacing: 0.5px;
+                background: transparent;
+            }
+            QLabel#score {
+                color: #FFD166;
+                font-size: 72px;
+                font-weight: 900;
+                background: transparent;
+            }
+            QLabel#advice {
+                color: #FFFFFF;
+                font-size: 22px;
+                font-weight: 600;
+                line-height: 130%;
+                background: transparent;
+            }
+        """)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(24, 20, 24, 20)
+        lay.setSpacing(8)
 
-    def set_end_visible(self, visible: bool):
-        if self._btn_end:
-            self._btn_end.setVisible(visible)
+        self._lbl_caption = QLabel("평균 점수", self)
+        self._lbl_caption.setObjectName("caption")
+        self._lbl_score = QLabel("0", self)
+        self._lbl_score.setObjectName("score")
+        self._lbl_advice = QLabel("", self)
+        self._lbl_advice.setObjectName("advice")
+        self._lbl_advice.setWordWrap(True)
 
-    def set_end_enabled(self, enabled: bool):
-        self._btn_end.setEnabled(enabled)
+        lay.addWidget(self._lbl_caption)
+        lay.addWidget(self._lbl_score)
+        lay.addSpacing(6)
+        lay.addWidget(self._lbl_advice)
 
-    def teardown(self):
-        self._lbl_count.hide()
-        self._btn_end.hide()
+    def set_avg(self, v: float | int):
+        try:
+            v = int(round(float(v)))
+        except Exception:
+            v = 0
+        self._lbl_score.setText(str(v))
 
-@dataclass
-class TextStyle:
-    family: str = ""
-    bold: bool = True
-    px: int = 36
-    color: QColor = field(default_factory=lambda: QColor(255, 255, 255))
-    outline_color: QColor = field(default_factory=lambda: QColor(0, 0, 0))
-    outline_width: int = 3
-    margin: int = 16
+    def set_advice(self, text: str):
+        self._lbl_advice.setText(text or "")
 
-def draw_text(img: QImage, text: str, x: int, y: int, style: TextStyle):
-    painter = QPainter(img)
-    painter.setRenderHint(QPainter.Antialiasing, True)
-    painter.setRenderHint(QPainter.TextAntialiasing, True)
+class ActionButtons(QWidget):
+    endClicked = Signal()
+    infoClicked = Signal()
 
-    font = QFont(style.family)
-    font.setBold(style.bold)
-    font.setPixelSize(style.px)
-    painter.setFont(font)
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WA_StyledBackground, True)
 
-    path = QPainterPath()
-    path.addText(x, y, font, text)
+        self.setStyleSheet("""
+            QWidget { background: transparent; }
 
-    if style.outline_width > 0:
-        painter.setPen(QPen(style.outline_color, style.outline_width))
-        painter.drawPath(path)
+            QPushButton {
+                border: none;
+                border-radius: 14px;
+                padding: 14px 22px;
+                font-size: 20px;
+                font-weight: 600;
+            }
 
-    painter.setPen(Qt.NoPen)
-    painter.fillPath(path, style.color)
-    painter.end()
+            QPushButton#btn-info {
+                background: rgba(255,255,255,0.14);
+                color: #FFFFFF;
+                border: 2px solid rgba(255,255,255,0.22);
+            }
+            QPushButton#btn-info:hover {
+                background: rgba(255,255,255,0.22);
+            }
+            QPushButton#btn-info:pressed {
+                background: rgba(255,255,255,0.30);
+            }
 
-def draw_count_top_left(img: QImage, count: int, label: str, style: Optional[TextStyle] = None):
-    if style is None:
-        base_px = max(28, img.width() // 18)
-        style = TextStyle(px=base_px, margin=int(base_px * 0.6))
-    x = style.margin
-    y = style.margin + style.px
-    draw_text(img, f"{label}: {count}", x, y, style)
+            QPushButton#btn-end {
+                background: #FF4D4F;
+                color: #FFFFFF; 
+            }
+            QPushButton#btn-end:hover {
+                background: #FF6B6D;
+                color: #FFFFFF; 
+            }
+            QPushButton#btn-end:pressed {
+                background: #D9363E;
+                color: #FFFFFF; 
+            }
+        """)
+
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(12)
+
+        self._btn_info = QPushButton("👤  내 정보", self)
+        self._btn_info.setObjectName("btn-info")
+
+        self._btn_end = QPushButton("🚪  운동 종료", self)
+        self._btn_end.setObjectName("btn-end")
+
+        lay.addWidget(self._btn_info)
+        lay.addWidget(self._btn_end)
+
+        self._btn_end.clicked.connect(self.endClicked.emit)
+        self._btn_info.clicked.connect(self.infoClicked.emit)
+
+        self._btn_end.setMinimumHeight(40)
+        self._btn_info.setMinimumHeight(40)
+
+    def set_enabled(self, end_enabled: bool = True, info_enabled: bool = True):
+        self._btn_end.setEnabled(end_enabled)
+        self._btn_info.setEnabled(info_enabled)

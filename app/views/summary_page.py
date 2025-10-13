@@ -61,7 +61,7 @@ class MetricCard(Card):
         self.value_lbl.setText(value)
 
 class ExerciseCard(Card):
-    def __init__(self, name: str, reps: int, avg_score: float, seconds: int, parent=None):
+    def __init__(self, name: str, reps: int, avg_score: float, parent=None):
         super().__init__(parent)
         lay = QHBoxLayout(self)
         lay.setContentsMargins(18, 14, 18, 14)
@@ -89,14 +89,11 @@ class ExerciseCard(Card):
 
         l1, v1 = mk_pair("횟수", f"{reps} 회")
         l2, v2 = mk_pair("평균 점수", f"{avg_score:.1f} 점")
-        l3, v3 = mk_pair("운동 시간", pretty_hms(seconds))
 
         grid.addWidget(l1, 0, 0)
         grid.addWidget(v1, 1, 0)
         grid.addWidget(l2, 0, 1)
         grid.addWidget(v2, 1, 1)
-        grid.addWidget(l3, 0, 2)
-        grid.addWidget(v3, 1, 2)
 
         lay.addLayout(name_box, 1)
         lay.addLayout(grid, 2)
@@ -217,15 +214,14 @@ class SummaryPage(PageBase):
         if not self._summary:
             return
         d = self._summary
-        total_seconds = d.get("duration_sec", 0)
+        total_seconds = d.get("duration_sec", 0)  
         avg_score = d.get("avg_score", 0.0)
         per_list = d.get("per_exercises") or []
 
         if per_list:
-            total_seconds = sum(x.get("sec", 0) for x in per_list)
-            w_sum = sum(x.get("avg", 0.0) * x.get("reps", 0) for x in per_list)
-            reps = sum(x.get("reps", 0) for x in per_list) or 1
-            avg_score = (w_sum / reps) if reps else 0.0
+            w_sum = sum(float(x.get("avg", x.get("avg_score", 0.0))) * int(x.get("reps", 0)) for x in per_list)
+            reps   = sum(int(x.get("reps", 0)) for x in per_list)
+            avg_score = (w_sum / max(reps, 1)) if reps else 0.0
 
         self.total_time_card.setValue(pretty_hms(total_seconds))
         self.avg_score_card.setValue(f"{avg_score:.1f} 점")
@@ -238,8 +234,7 @@ class SummaryPage(PageBase):
         rows = per_list or [{
             "name": d.get("exercise", "운동"),
             "reps": d.get("reps", 0),
-            "avg": d.get("avg_score", 0.0),
-            "sec": d.get("duration_sec", 0),
+            "avg":  d.get("avg_score", 0.0),
         }]
 
         for item in rows:
@@ -247,7 +242,6 @@ class SummaryPage(PageBase):
                 f"🏋️ {item.get('name','운동')}",
                 int(item.get("reps", 0)),
                 float(item.get("avg", item.get("avg_score", 0.0))),
-                int(item.get("sec", item.get("duration_sec", 0)))
             )
             card.setMinimumHeight(96)
             self.list_lay.addWidget(card)
