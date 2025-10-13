@@ -21,7 +21,7 @@ class SelectPage(PageBase):
             b.setFixedHeight(60)
             b.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
-        self.btn_squat.clicked.connect(lambda: self._goto("squat"))
+        self.btn_squat.clicked.connect(lambda: self._goto("exercise"))
         self.btn_plank.setEnabled(False)
         self.btn_lunge.setEnabled(False)
         self.btn_pushup.setEnabled(False)

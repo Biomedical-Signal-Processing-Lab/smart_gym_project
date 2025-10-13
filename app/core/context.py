@@ -40,19 +40,13 @@ class AppContext:
         if self.router:
             self.router.navigate("select")
 
-    def restart_current_exercise(self, ex: str | None):
-        if not self.router:
-            return
-        if ex == "squat":
-            self.router.navigate("squat")
-        elif ex == "plank":
-            self.router.navigate("plank")
-        elif ex == "lunge":
-            self.router.navigate("lunge")
-        elif ex == "pushup":
-            self.router.navigate("pushup")
-        else:
-            self.router.navigate("select")
+    def goto_profile(self):
+        if self.router:
+            self.router.navigate("info")
+
+    def restart_current_exercise(self, ex: str | None = None):
+        if self.router:
+            self.router.navigate("exercise") 
 
     def set_current_user(self, user_id: int, name: str):
         self.current_user_id = user_id

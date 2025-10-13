@@ -6,7 +6,7 @@ from PySide6.QtCore import Qt
 from core.context import AppContext
 from core.router import Router
 from views.start_page import StartPage
-from views.squat_page import SquatPage
+from views.exercise_page import ExercisePage
 from views.select_page import SelectPage
 from views.summary_page import SummaryPage
 from views.login_page import LoginPage
@@ -24,7 +24,7 @@ class MainWindow(QMainWindow):
 
         self.router.register("start", lambda: StartPage())
         self.router.register("select", lambda: SelectPage())
-        self.router.register("squat", lambda: SquatPage())
+        self.router.register("exercise", lambda: ExercisePage())
         self.router.register("summary", lambda: SummaryPage())
         self.router.register("login",  lambda: LoginPage())
         self.router.register("enroll", lambda: EnrollPage())
@@ -33,7 +33,7 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence(Qt.Key_F11), self).activated.connect(self._toggle_fullscreen)
         QShortcut(QKeySequence(Qt.Key_F1), self).activated.connect(lambda: self.router.navigate("start"))
         QShortcut(QKeySequence(Qt.Key_F2), self).activated.connect(lambda: self.router.navigate("select"))
-        QShortcut(QKeySequence(Qt.Key_F3), self).activated.connect(lambda: self.router.navigate("squat"))
+        QShortcut(QKeySequence(Qt.Key_F3), self).activated.connect(lambda: self.router.navigate("exercise"))
 
         self.resize(800, 800)
         self.router.navigate("start")

@@ -1,12 +1,16 @@
 # views/squat_page.py
 import time, cv2
+from pathlib import Path
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QColor, QImage
 from PySide6.QtWidgets import QVBoxLayout
 from core.page_base import PageBase
-from core.mp_manager import PoseProcessor
+from core.pose_manager import PoseProcessor
 from ui.overlay_painter import VideoCanvas, CanvasHUD
 from ui.score_painter import ScoreOverlay
+
+APP_DIR = Path(__file__).resolve().parents[1]
+MODEL_PATH = APP_DIR / "models" / "yolov8m_pose.onnx"
 
 DEMO_EXERCISES = [
     {"name": "스쿼트",   "reps": 32, "avg": 93.2, "sec": 1180},
@@ -19,40 +23,42 @@ DEMO_EXERCISES = [
     {"name": "플랭크",   "reps": 4,  "avg": 92.0, "sec": 480},
 ]
 
-class SquatPage(PageBase):
-    DOWN_TH   = 120.0
-    UP_TH     = 165.0
+class ExercisePage(PageBase):
+    DOWN_TH    = 120.0
+    UP_TH      = 165.0
     DEBOUNCE_N = 3
 
     def __init__(self):
         super().__init__()
-        self.setObjectName("SquatPage")
+        self.setObjectName("ExercisePage")
 
-        # --- 상태
         self.state = "UP"
         self.reps = 0
         self._down_frame = 0
         self._up_frame = 0
         self._min_knee_in_phase = None
-
         self._score_sum = 0.0
         self._score_n   = 0
         self._session_started_ts = None
 
-        self.proc = PoseProcessor(model_complexity=1, name="pose_squat")
-        self.proc.set_draw_landmarks(True)
+        self.proc = PoseProcessor(
+            onnx_path=str(MODEL_PATH),
+            conf_thres=0.10,
+            draw_landmarks=True,
+            name="pose_squat",
+        )
 
         self.canvas = VideoCanvas()
-        self.canvas.setContentsMargins(0,0,0,0)
+        self.canvas.setContentsMargins(0, 0, 0, 0)
         self.canvas.set_fit_mode("cover")
 
-        self.hud = CanvasHUD(self.canvas, count_label_text="SQUAT")
-        self.hud.endClicked.connect(self._end_clicked)  
+        self.hud = CanvasHUD(self.canvas, count_label_text="운동종류")
+        self.hud.endClicked.connect(self._end_clicked)
 
         self.score_overlay = ScoreOverlay(self)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(0,0,0,0)
+        root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
         root.addWidget(self.canvas, 1)
 
@@ -71,24 +77,19 @@ class SquatPage(PageBase):
             router.navigate(page)
 
     def _build_summary(self):
-        per_list = DEMO_EXERCISES  
-
+        per_list = DEMO_EXERCISES
         total_seconds = sum(x["sec"] for x in per_list)
         w_sum = sum(x["avg"] * x["reps"] for x in per_list)
         reps_sum = sum(x["reps"] for x in per_list) or 1
         avg_total = w_sum / reps_sum
 
         ended_at = time.time()
-        dur = 0.0 if self._session_started_ts is None else (ended_at - self._session_started_ts)
-
         return {
-            "duration_sec": int(total_seconds),     
+            "duration_sec": int(total_seconds),
             "avg_score": round(avg_total, 1),
-
             "per_exercises": per_list,
-
             "exercise": "squat",
-            "reps": self.reps,                    
+            "reps": self.reps,
             "started_at": self._session_started_ts,
             "ended_at": ended_at,
         }
@@ -118,13 +119,14 @@ class SquatPage(PageBase):
         self.ctx = ctx
         self._session_started_ts = time.time()
         self._score_sum = 0.0
-        self._score_n   = 0
+        self._score_n = 0
         self._reset_state()
 
         self.ctx.cam.set_process(self.proc)
         self.ctx.cam.start()
 
-        if self.timer.isActive(): self.timer.stop()
+        if self.timer.isActive():
+            self.timer.stop()
         self.timer.start(self.PAGE_FPS_MS)
         self.hud.mount()
 
@@ -135,19 +137,18 @@ class SquatPage(PageBase):
             ctx.cam.stop()
         except Exception:
             pass
-
         self.canvas.clear_overlays()
         self.hud.teardown()
 
     def _tick(self):
         frame = self.ctx.cam.frame()
+        meta = self.ctx.cam.meta() or {}
         if frame is not None:
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             h, w, ch = rgb.shape
             qimg = QImage(rgb.data, w, h, ch*w, QImage.Format_RGB888)
             self.canvas.set_frame(qimg)
 
-        meta = self.ctx.cam.meta() or {}
         self._update_from_meta(meta)
 
     def _reset_state(self):
@@ -160,7 +161,8 @@ class SquatPage(PageBase):
 
     def _knees_from_meta(self, m):
         kL, kR = m.get("knee_l_deg"), m.get("knee_r_deg")
-        if kL is None or kR is None: return None
+        if kL is None or kR is None: 
+            return None
         return float(kL), float(kR)
 
     def _knee_color_by_angle(self, ang: float) -> QColor:
@@ -173,7 +175,7 @@ class SquatPage(PageBase):
     def _score_by_angle(self, ang: float) -> int:
         a0, s0 = 75.0, 100.0
         a1, s1 = 110.0, 0.0
-        t = max(0.0, min(1.0, (ang - a0)/(a1 - a0)))
+        t = max(0.0, min(1.0, (ang - a0) / (a1 - a0)))
         return round((1.0 - t) * s0 + t * s1)
 
     def _update_from_meta(self, meta: dict):
@@ -181,9 +183,12 @@ class SquatPage(PageBase):
         is_down_now = knees and (knees[0] < self.DOWN_TH and knees[1] < self.DOWN_TH)
         is_up_now   = knees and (knees[0] >= self.UP_TH and knees[1] >= self.UP_TH)
 
-        if is_down_now:   self._down_frame += 1; self._up_frame = 0
-        elif is_up_now:   self._up_frame   += 1; self._down_frame = 0
-        else:             self._down_frame = 0;  self._up_frame   = 0
+        if is_down_now:
+            self._down_frame += 1; self._up_frame = 0
+        elif is_up_now:
+            self._up_frame += 1; self._down_frame = 0
+        else:
+            self._down_frame = 0; self._up_frame = 0
 
         if self.state == "DOWN" and knees is not None:
             cur_min = min(knees)
