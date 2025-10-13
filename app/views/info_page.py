@@ -1,6 +1,5 @@
 # views/info_page.py
 import traceback
-from datetime import datetime, timedelta
 from PySide6.QtWidgets import QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QMessageBox, QGroupBox
 from PySide6.QtCore import Qt
 from core.page_base import PageBase
@@ -13,7 +12,6 @@ class InfoPage(PageBase):
         super().__init__()
         self.setObjectName("InfoPage")
 
-        # ----- 프로필 영역
         self.lbl_name = QLabel("-")
         self.lbl_created = QLabel("-")
 
@@ -23,7 +21,6 @@ class InfoPage(PageBase):
         prof_v.addWidget(self.lbl_created)
         prof_group.setLayout(prof_v)
 
-        # ----- 차트 영역 (최근 7일)
         self.chart_group = QGroupBox("최근 7일 운동 활동")
         cg_layout = QVBoxLayout(self.chart_group)
 
@@ -37,7 +34,6 @@ class InfoPage(PageBase):
         cg_layout.addWidget(self.chart_empty)
         self.chart_empty.hide()
 
-        # ----- 하단 버튼
         self.btn_back = QPushButton("뒤로가기")
         self.btn_logout = QPushButton("로그아웃")
         self.btn_delete = QPushButton("회원탈퇴")
@@ -49,18 +45,15 @@ class InfoPage(PageBase):
         btns.addWidget(self.btn_delete)
         btns.addStretch(1)
 
-        # ----- 루트 레이아웃
         root = QVBoxLayout(self)
         root.addWidget(prof_group, 1)     
         root.addWidget(self.chart_group, 1)  
         root.addLayout(btns)
 
-        # ----- 시그널
         self.btn_back.clicked.connect(lambda: self._goto("select"))
         self.btn_logout.clicked.connect(self._logout)
         self.btn_delete.clicked.connect(self._delete_account)
 
-    # 페이지 진입 시 갱신
     def on_enter(self, ctx):
         self.ctx = ctx
         self._refresh()
@@ -79,7 +72,6 @@ class InfoPage(PageBase):
                     self._show_logged_out_view()
                     return
 
-                # 프로필 채우기
                 self.lbl_name.setText(f"이름: {user.name}")
                 self.lbl_created.setText(f"가입일: {user.created_at}")
 
@@ -91,26 +83,29 @@ class InfoPage(PageBase):
         except Exception:
             traceback.print_exc()
             QMessageBox.critical(self, "오류", "정보를 불러오지 못했습니다.")
-            self._show_logged_out_view()
+            self._show_profile_only()
 
     def _render_activity_chart(self, s, user_id: int):
-        from db.models import WorkoutSession
+        from db.models import WorkoutSession, SessionExercise
+        from sqlalchemy import func
         import numpy as np
+        from datetime import datetime, timedelta
 
         today = datetime.now().date()
         start_date = today - timedelta(days=6)
 
-        # 날짜별/종목별 reps 합계
         date_expr = func.date(WorkoutSession.started_at)
+
         rows = (
             s.query(
                 date_expr.label("d"),
-                WorkoutSession.exercise,
-                func.sum(WorkoutSession.reps).label("cnt"),
+                SessionExercise.exercise_name.label("ex"),
+                func.sum(SessionExercise.reps).label("cnt"),
             )
+            .join(SessionExercise, SessionExercise.session_id == WorkoutSession.id)
             .filter(WorkoutSession.user_id == user_id)
             .filter(date_expr >= str(start_date))
-            .group_by(date_expr, WorkoutSession.exercise)
+            .group_by("d", "ex")
             .all()
         )
 
@@ -124,7 +119,7 @@ class InfoPage(PageBase):
 
         preferred = ["squat", "lunge", "pushup", "plank"]
         ex_list = [ex for ex in preferred if ex in exercises] + \
-                  [ex for ex in sorted(exercises) if ex not in preferred]
+                [ex for ex in sorted(exercises) if ex not in preferred]
 
         values = {ex: [data.get(day, {}).get(ex, 0) for day in days] for ex in ex_list}
         totals = [sum(values[ex][i] for ex in ex_list) for i in range(len(days))]
@@ -138,7 +133,7 @@ class InfoPage(PageBase):
 
         if not ex_list or all(t == 0 for t in totals):
             self.chart_empty.show()
-            ax.plot(range(len(days)), [0]*len(days), color="gray", linestyle="--")
+            ax.plot(range(len(days)), [0]*len(days), linestyle="--")
             self.fig.tight_layout()
             self.canvas.draw_idle()
             return
@@ -153,6 +148,20 @@ class InfoPage(PageBase):
         ax.legend(loc="upper left")
         self.fig.tight_layout()
         self.canvas.draw_idle()
+
+    def _show_profile_only(self):
+        try:
+            self.fig.clear()
+            ax = self.fig.add_subplot(111)
+            ax.set_title("exercise history")
+            ax.set_ylabel("count")
+            ax.plot([], [])
+            self.chart_empty.setText("데이터를 가져올 수 없습니다.")
+            self.chart_empty.show()
+            self.fig.tight_layout()
+            self.canvas.draw_idle()
+        except Exception:
+            pass
 
     def _show_logged_out_view(self):
         self.lbl_name.setText("이름: -")

@@ -21,15 +21,16 @@ class User(Base):
     embeddings: Mapped[List["FaceEmbedding"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
-
     sessions: Mapped[List["WorkoutSession"]] = relationship(
-        back_populates="user", cascade="all, delete-orphan"
+        back_populates="user", cascade="all, delete-orphan", order_by="WorkoutSession.started_at.desc()"
     )
 
 class FaceEmbedding(Base):
     __tablename__ = "face_embeddings"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
     dim: Mapped[int] = mapped_column(Integer)
     embedding: Mapped[bytes] = mapped_column(BLOB)
     created_at: Mapped[datetime] = mapped_column(
@@ -46,12 +47,8 @@ class WorkoutSession(Base):
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
 
-    # 운동 종류: "squat", "lunge", "pushup", "plank"
-    exercise: Mapped[str] = mapped_column(String(20), index=True)
-
-    reps: Mapped[int] = mapped_column(Integer, default=0)
-    avg_score: Mapped[float] = mapped_column(Float, default=0.0)       
-    duration_sec: Mapped[int] = mapped_column(Integer, default=0)
+    duration_sec: Mapped[int] = mapped_column(Integer, default=0)   
+    avg_score: Mapped[float] = mapped_column(Float, default=0.0)    
 
     started_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=text("(datetime('now','localtime'))")
@@ -61,5 +58,26 @@ class WorkoutSession(Base):
     )
 
     user: Mapped[User] = relationship(back_populates="sessions")
+    exercises: Mapped[List["SessionExercise"]] = relationship(
+        back_populates="session", cascade="all, delete-orphan", order_by="SessionExercise.order_index"
+    )
 
 Index("ix_sessions_user_started", WorkoutSession.user_id, WorkoutSession.started_at)
+
+class SessionExercise(Base):
+    __tablename__ = "session_exercises"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("workout_sessions.id", ondelete="CASCADE"), index=True
+    )
+
+    exercise_name: Mapped[str] = mapped_column(String(40), index=True)  
+    reps: Mapped[int] = mapped_column(Integer, default=0)
+    avg_score: Mapped[float] = mapped_column(Float, default=0.0)
+
+    order_index: Mapped[int] = mapped_column(Integer, default=0)
+
+    session: Mapped[WorkoutSession] = relationship(back_populates="exercises")
+
+Index("ix_session_exercises_session_order", SessionExercise.session_id, SessionExercise.order_index)

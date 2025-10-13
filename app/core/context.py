@@ -4,8 +4,7 @@ from core.camera_manager import CameraManager
 from core.face_service import FaceService
 from core.config import CAMERA_DEVICE, WIDTH, HEIGHT, FPS
 from db.database import create_engine_and_session, init_db
-from core.face_service import FaceService
-from db.models import WorkoutSession
+from db.models import WorkoutSession, SessionExercise
 
 class AppContext:
     def __init__(self):
@@ -63,19 +62,30 @@ class AppContext:
         if not self.is_logged_in():
             return
 
-        from datetime import datetime
-        started = summary.get("started_at")
-        ended   = summary.get("ended_at")
+        duration_sec = int(summary.get("duration_sec", 0))
+        avg_score = float(summary.get("avg_score", 0.0))
+        exercises = list(summary.get("exercises") or [])
 
         with self.SessionLocal() as s:
             sess = WorkoutSession(
                 user_id=self.current_user_id,
-                exercise=summary.get("exercise", "unknown"),
-                reps=int(summary.get("reps", 0)),
-                avg_score=float(summary.get("avg_score", 0.0)),
-                duration_sec=int(summary.get("duration_sec", 0)),
-                started_at=datetime.fromtimestamp(started) if started else None,
-                ended_at=datetime.fromtimestamp(ended) if ended else None,
+                duration_sec=duration_sec,
+                avg_score=avg_score,
             )
             s.add(sess)
+            s.flush()  
+
+            for idx, item in enumerate(exercises):
+                name = str(item.get("name", "운동")).strip()
+                reps = int(item.get("reps", 0))
+                avg  = float(item.get("avg", item.get("avg_score", 0.0)))
+
+                s.add(SessionExercise(
+                    session_id=sess.id,
+                    exercise_name=name,
+                    reps=reps,
+                    avg_score=avg,
+                    order_index=idx
+                ))
+
             s.commit()

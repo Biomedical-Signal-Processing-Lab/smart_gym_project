@@ -13,13 +13,12 @@ class StartPage(PageBase):
         self.setMinimumSize(1, 1)
         self._last_image = None
 
-        # ===== 자동 인식 파라미터 & 타이머 =====
         self._auto_timer = QTimer(self)
-        self._auto_timer.setInterval(1000)     # 1초마다 시도 
+        self._auto_timer.setInterval(1000)     
         self._auto_timer.timeout.connect(self._auto_login_tick)
-        self._hit_consecutive = 0             # 연속 성공 카운트
-        self._need_hits = 2                   # 2번 연속 매칭되면 로그인으로 인정
-        self._th_sim = 0.50                   # 매칭 임계값(초기 0.50 권장)
+        self._hit_consecutive = 0             
+        self._need_hits = 2                   
+        self._th_sim = 0.50                   
 
         self.video_label = QLabel(self)
         self.video_label.setAlignment(Qt.AlignCenter)
@@ -40,7 +39,7 @@ class StartPage(PageBase):
         # except Exception:
         #     self.player.mediaStatusChanged.connect(self._loop_if_needed)
 
-        title = QLabel("헬스왕"); title.setAlignment(Qt.AlignCenter)
+        title = QLabel("자세어때"); title.setAlignment(Qt.AlignCenter)
         title.setStyleSheet("""
             color: black;
             font-size: 120px;
@@ -142,12 +141,14 @@ class StartPage(PageBase):
         if router: router.navigate("enroll")
 
     def on_enter(self, ctx):
-        try: self.player.play()
-        except Exception: pass
-        # ===== 카메라 ON & 자동 로그인 시작 =====
+        try: 
+            self.player.play()
+        except Exception: 
+            pass
+        
         self.ctx = ctx
         try:
-            self.ctx.cam.set_process("front", None)  # 원본 프레임
+            self.ctx.cam.set_process("front", None)  
             self.ctx.cam.start("front")
         except Exception:
             pass
@@ -171,7 +172,6 @@ class StartPage(PageBase):
             self.lbl_status.setText("카메라 오류. 장치를 확인해 주세요.")
             return
 
-        # 얼굴 임베딩
         emb = self.ctx.face.detect_and_embed(frame)
         if emb is None:
             self._hit_consecutive = 0
@@ -183,7 +183,6 @@ class StartPage(PageBase):
             self._hit_consecutive += 1
             self.lbl_status.setText(f"{name} 님으로 인식 중… ({self._hit_consecutive}/{self._need_hits})")
             if self._hit_consecutive >= self._need_hits:
-                # 실제 로그인 처리: 현재 사용자 세팅 + 페이지 전환
                 try:
                     from db.models import User
                     with self.ctx.SessionLocal() as s:
@@ -196,12 +195,8 @@ class StartPage(PageBase):
                 self._goto("select")
         else:
             self._hit_consecutive = 0
-            if sim > 0.30:
-                self.lbl_status.setText("등록되지 않은 얼굴이에요. ‘회원가입’을 눌러 등록해 주세요.")
-            else:
-                self.lbl_status.setText("얼굴을 화면 중앙에 맞추고 정면을 바라봐 주세요.")
+            self.lbl_status.setText("등록되지 않은 얼굴이에요. ‘회원가입’을 눌러 등록해 주세요.")
 
-    # 기존 라우팅 함수 재사용
     def _goto(self, page: str):
         router = self.parent()
         while router and not hasattr(router, "navigate"): router = router.parent()

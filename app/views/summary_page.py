@@ -216,7 +216,7 @@ class SummaryPage(PageBase):
         d = self._summary
         total_seconds = d.get("duration_sec", 0)  
         avg_score = d.get("avg_score", 0.0)
-        per_list = d.get("per_exercises") or []
+        per_list = d.get("exercises") or []
 
         if per_list:
             w_sum = sum(float(x.get("avg", x.get("avg_score", 0.0))) * int(x.get("reps", 0)) for x in per_list)
@@ -231,11 +231,7 @@ class SummaryPage(PageBase):
             if it.widget():
                 it.widget().deleteLater()
 
-        rows = per_list or [{
-            "name": d.get("exercise", "운동"),
-            "reps": d.get("reps", 0),
-            "avg":  d.get("avg_score", 0.0),
-        }]
+        rows = per_list or []
 
         for item in rows:
             card = ExerciseCard(
