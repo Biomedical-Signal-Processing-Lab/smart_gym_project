@@ -1,0 +1,10 @@
+
+*.log
+*.mp4
+
+
+build/
+dist/
+
+
+!keep/.gitkeep
