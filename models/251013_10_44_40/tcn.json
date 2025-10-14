@@ -1,0 +1,19 @@
+{
+  "classes": [
+    "idle",
+    "plank",
+    "pushup",
+    "shoulder_press",
+    "squat"
+  ],
+  "input_channels": 51,
+  "hparams": {
+    "win": 30,
+    "levels": 4,
+    "channels": 128,
+    "kernel": 3,
+    "dropout": 0.2
+  },
+  "features": "xyconf",
+  "norm": "image"
+}
