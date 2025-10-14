@@ -171,7 +171,7 @@ class InfoPage(PageBase):
         cc = QVBoxLayout(self.chart_card); cc.setContentsMargins(16,14,16,12); cc.setSpacing(6)
         title_row = QHBoxLayout()
         icon = QLabel("▴"); icon.setStyleSheet("color:#7c8cf8; font-size:16px;")
-        t = QLabel("주간 운동 추이(꺾은선)"); t.setStyleSheet("color:#1f2937; font-size:16px; font-weight:800;")
+        t = QLabel("주간 운동 추이"); t.setStyleSheet("color:#1f2937; font-size:16px; font-weight:800;")
         title_row.addWidget(icon); title_row.addWidget(t); title_row.addStretch(1)
         cc.addLayout(title_row)
 
@@ -194,7 +194,7 @@ class InfoPage(PageBase):
         btn_row.addStretch(1); btn_row.addWidget(self.btn_back); btn_row.addWidget(self.btn_logout)
         root.addLayout(btn_row)
 
-        self.btn_back.clicked.connect(lambda: self._goto("select"))
+        self.btn_back.clicked.connect(lambda: self._goto("guide"))
         self.btn_logout.clicked.connect(self._logout)
         self.btn_left.clicked.connect(lambda: self._scroll_stats(-1))
         self.btn_right.clicked.connect(lambda: self._scroll_stats(+1))
