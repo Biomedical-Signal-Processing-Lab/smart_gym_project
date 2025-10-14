@@ -1,4 +1,3 @@
-# views/start_page.py 
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, QSizePolicy, QStackedLayout
 from PySide6.QtGui import QPixmap
 from PySide6.QtCore import Qt, QTimer
@@ -31,13 +30,6 @@ class StartPage(PageBase):
         self.sink = QVideoSink(self)
         self.player.setVideoOutput(self.sink)
         self.sink.videoFrameChanged.connect(self._on_frame)
-
-        # video_path = os.path.join(os.path.dirname(__file__), "..", "assets", "start.mov")
-        # self.player.setSource(QUrl.fromLocalFile(os.path.abspath(video_path)))
-        # try:
-        #     self.player.setLoops(QMediaPlayer.Infinite)
-        # except Exception:
-        #     self.player.mediaStatusChanged.connect(self._loop_if_needed)
 
         title = QLabel("자세어때"); title.setAlignment(Qt.AlignCenter)
         title.setStyleSheet("""
@@ -192,7 +184,7 @@ class StartPage(PageBase):
                 except Exception:
                     pass
                 self._auto_timer.stop()
-                self._goto("select")
+                self._goto("guide")
         else:
             self._hit_consecutive = 0
             self.lbl_status.setText("등록되지 않은 얼굴이에요. ‘회원가입’을 눌러 등록해 주세요.")

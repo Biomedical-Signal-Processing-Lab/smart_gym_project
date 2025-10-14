@@ -1,4 +1,3 @@
-# views/login_page.py
 import cv2
 from PySide6.QtWidgets import (
     QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QMessageBox, QSizePolicy
@@ -35,7 +34,6 @@ class LoginPage(PageBase):
         self.btn_enroll= QPushButton("회원가입")
         self.btn_back  = QPushButton("처음으로")
 
-        # 버튼 사이 간격과 정렬
         btns = QHBoxLayout()
         btns.setSpacing(12)
         btns.setContentsMargins(0, 0, 0, 0)
@@ -47,20 +45,18 @@ class LoginPage(PageBase):
 
         bottom = QWidget(self)
         bottom_v = QVBoxLayout(bottom)
-        bottom_v.setContentsMargins(16, 8, 16, 16)  # 하단 여백 약간
+        bottom_v.setContentsMargins(16, 8, 16, 16)  
         bottom_v.setSpacing(10)
         bottom_v.addWidget(self.info)
         bottom_v.addLayout(btns)
 
-        # ---- 루트 레이아웃: 상단 2, 하단 1 (즉, 2/3 : 1/3)
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
         root.setSpacing(12)
         root.addWidget(self.title)
-        root.addWidget(top, 2)      # stretch 2
-        root.addWidget(bottom, 1)   # stretch 1
+        root.addWidget(top, 2)     
+        root.addWidget(bottom, 1)   
 
-        # ---- 시그널/타이머
         self.timer = QTimer(self); self.timer.timeout.connect(self._tick)
         self.btn_try.clicked.connect(self._recognize)
         self.btn_back.clicked.connect(lambda: self._goto("start"))
@@ -91,7 +87,6 @@ class LoginPage(PageBase):
         h, w, ch = rgb.shape
         qimg = QImage(rgb.data, w, h, ch*w, QImage.Format_RGB888)
 
-        # 라벨 크기에 맞춰 비율 유지 확대
         target_w = max(1, self.video.width())
         target_h = max(1, self.video.height())
         self.video.setPixmap(
@@ -118,6 +113,6 @@ class LoginPage(PageBase):
                     self.ctx.set_current_user(user.id, user.name)
 
             QMessageBox.information(self, "환영합니다", f"{name} 님, 인식되었습니다. (sim={score:.3f})")
-            self._goto("select")
+            self._goto("guide")
         else:
             self.info.setText(f"등록되지 않은 얼굴입니다. (최대 유사도 {score:.3f})")

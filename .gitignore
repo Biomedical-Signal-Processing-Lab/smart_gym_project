@@ -10,7 +10,9 @@ dist/
 env/
 venv/
 site-packages/ 
-*data
+
+app/data/** 
+!app/data/guide_data.py
 
 # IDE
 .vscode/
