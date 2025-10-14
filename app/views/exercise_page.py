@@ -1,4 +1,4 @@
-# views/squat_page.py
+# views/exercise_page.py
 import time, cv2
 from pathlib import Path
 from PySide6.QtCore import QTimer
@@ -10,7 +10,16 @@ from ui.overlay_painter import VideoCanvas, ExerciseCard, ScoreAdvicePanel, Acti
 from ui.score_painter import ScoreOverlay
 
 APP_DIR = Path(__file__).resolve().parents[1]
-MODEL_PATH = APP_DIR / "models" / "yolov8m_pose.onnx"
+
+def _first_exists(*candidates):
+    for p in candidates:
+        if p and Path(p).exists():
+            return str(p)
+    return str(candidates[-1])
+
+YOLO_POSE_ONNX = _first_exists(APP_DIR / "models" / "yolov8m_pose.onnx")
+TCN_ONNX = _first_exists(APP_DIR / "models" / "tcn.onnx")
+TCN_JSON = _first_exists(APP_DIR / "models" / "tcn.json")
 
 DEMO_EXERCISES = [
     {"name": "스쿼트",   "reps": 32, "avg": 93.2},
@@ -24,6 +33,15 @@ DEMO_EXERCISES = [
     {"name": "걷기", "reps": 45, "avg": 73.4},
     {"name": "뛰기", "reps": 65, "avg": 66.2}
 ]
+
+_LABEL_KO = {
+    None: "휴식중",     
+    "idle": "휴식중",
+    "plank": "플랭크",
+    "pushup": "푸시업",
+    "shoulder_press": "숄더 프레스",
+    "squat": "스쿼트",
+}
 
 class ExercisePage(PageBase):
     DOWN_TH    = 120.0
@@ -42,17 +60,29 @@ class ExercisePage(PageBase):
         self._score_sum = 0.0
         self._score_n   = 0
         self._session_started_ts = None
+        self._last_label = None
+
+        # 사람 미탐지 5초 타이머
+        self._no_person_since: float | None = None
+        self.NO_PERSON_TIMEOUT_SEC = 5.0
+        self._entered_at: float = 0.0
+        self.NO_PERSON_GRACE_SEC = 1.5
 
         self.proc = PoseProcessor(
-            onnx_path=str(MODEL_PATH),
+            onnx_path=str(YOLO_POSE_ONNX),
             conf_thres=0.10,
             draw_landmarks=True,
             name="pose_squat",
+            tcn_onnx=str(TCN_ONNX),
+            tcn_json=str(TCN_JSON),
+            tcn_stride=1,
+            prefer_cpu_for_tcn=True,
+            min_area=2000.0
         )
 
         self.canvas = VideoCanvas()
         self.canvas.setContentsMargins(0, 0, 0, 0)
-        self.canvas.set_fit_mode("cover")        
+        self.canvas.set_fit_mode("cover")
 
         self.card = ExerciseCard("휴식중")
         self.panel = ScoreAdvicePanel()
@@ -76,14 +106,15 @@ class ExercisePage(PageBase):
         self.timer.timeout.connect(self._tick)
         self.PAGE_FPS_MS = 33  # ~30fps
 
+        # 2프레임 연속일 때만 변경
+        self._title_hold = {"label": None, "cnt": 0}
+
     def _mount_overlays(self):
         self.canvas.clear_overlays()
         self.canvas.add_overlay(self.card, anchor="top-left")
         self.canvas.add_overlay(self.panel, anchor="top-right")
         self.canvas.add_overlay(self.actions, anchor="bottom-right")
-        self.card.show()
-        self.panel.show()
-        self.actions.show()
+        self.card.show(); self.panel.show(); self.actions.show()
         self._sync_panel_sizes()
 
     def _sync_panel_sizes(self):
@@ -102,20 +133,13 @@ class ExercisePage(PageBase):
 
     def _build_summary(self):
         per_list = DEMO_EXERCISES
-
         w_sum = sum(float(x.get("avg", 0.0)) * int(x.get("reps", 0)) for x in per_list)
         reps_sum = sum(int(x.get("reps", 0)) for x in per_list) or 1
         avg_total = w_sum / reps_sum
-
         ended_at = time.time()
         started_at = self._session_started_ts or ended_at
         duration_sec = int(max(0, ended_at - started_at))
-
-        return {
-            "duration_sec": duration_sec,          
-            "avg_score": round(avg_total, 1),      
-            "exercises": per_list 
-        }
+        return {"duration_sec": duration_sec, "avg_score": round(avg_total, 1), "exercises": per_list}
 
     def _end_clicked(self):
         if self.timer.isActive():
@@ -124,17 +148,14 @@ class ExercisePage(PageBase):
             self.ctx.cam.stop()
         except Exception:
             pass
-
         summary = self._build_summary()
         try:
             if hasattr(self.ctx, "save_workout_session"):
                 self.ctx.save_workout_session(summary)
         except Exception as e:
             print(f"[WARN] workout save failed: {e}")
-
         if hasattr(self.ctx, "goto_summary"):
             self.ctx.goto_summary(summary)
-
         self.canvas.clear_overlays()
 
     def _info_clicked(self):
@@ -151,11 +172,13 @@ class ExercisePage(PageBase):
         self._score_n = 0
         self._reset_state()
 
+        self._no_person_since = None
+        self._entered_at = time.time()
+
         title_text = getattr(self.ctx, "current_exercise", None) or "휴식중"
         self.card.set_title(title_text)
 
         self._mount_overlays()
-
         self.ctx.cam.set_process(self.proc)
         self.ctx.cam.start()
 
@@ -173,13 +196,59 @@ class ExercisePage(PageBase):
         self.canvas.clear_overlays()
 
     def _tick(self):
-        frame = self.ctx.cam.frame()
         meta = self.ctx.cam.meta() or {}
+        now = time.time()
+        in_grace = (now - self._entered_at) < self.NO_PERSON_GRACE_SEC
+
+        # --- no-person 5초 체크 (재진입 유예 반영) ---
+        m_ok = bool(meta.get("ok", False))
+
+        if in_grace:
+            # 재진입 직후 유예 시간 동안은 카운팅 리셋
+            self._no_person_since = None
+        else:
+            if not m_ok:
+                if self._no_person_since is None:
+                    self._no_person_since = now
+                elif (now - self._no_person_since) >= self.NO_PERSON_TIMEOUT_SEC:
+                    # 안전 종료 후 가이드로 이동
+                    try:
+                        if self.timer.isActive():
+                            self.timer.stop()
+                    except Exception:
+                        pass
+                    try:
+                        self.ctx.cam.stop()
+                    except Exception:
+                        pass
+                    self._no_person_since = None  # 플래그 리셋(재진입 시 즉시 튕김 방지)
+                    self._goto("guide")
+                    return
+            else:
+                self._no_person_since = None
+
+        # --- 프레임 렌더링 ---
+        frame = self.ctx.cam.frame()
         if frame is not None:
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             h, w, ch = rgb.shape
             qimg = QImage(rgb.data, w, h, ch*w, QImage.Format_RGB888)
             self.canvas.set_frame(qimg)
+
+        # --- 제목 (2프레임) ---
+        label = meta.get("label", None)  
+        new_title = _LABEL_KO.get(label, "휴식중") if label else "휴식중"
+
+        hold = self._title_hold
+        if hold["label"] != new_title:
+            hold["label"] = new_title
+            hold["cnt"] = 1
+        else:
+            hold["cnt"] += 1
+
+        if hold["cnt"] >= 2 and new_title != self._last_label:
+            self.card.set_title(new_title)
+            self._last_label = new_title
 
         self._update_from_meta(meta)
 
@@ -225,27 +294,30 @@ class ExercisePage(PageBase):
         return "좋아요! 같은 리듬으로 1초에 1회 정도 유지해보세요."
 
     def _update_from_meta(self, meta: dict):
-        knees = self._knees_from_meta(meta)
+        label = meta.get("label", None)
+        is_squat = (label == "squat")
+
+        knees = self._knees_from_meta(meta) if is_squat else None
         is_down_now = knees and (knees[0] < self.DOWN_TH and knees[1] < self.DOWN_TH)
         is_up_now   = knees and (knees[0] >= self.UP_TH and knees[1] >= self.UP_TH)
 
-        if is_down_now:
+        if is_squat and is_down_now:
             self._down_frame += 1; self._up_frame = 0
-        elif is_up_now:
+        elif is_squat and is_up_now:
             self._up_frame += 1; self._down_frame = 0
         else:
             self._down_frame = 0; self._up_frame = 0
 
-        if self.state == "DOWN" and knees is not None:
+        if is_squat and self.state == "DOWN" and knees is not None:
             cur_min = min(knees)
             self._min_knee_in_phase = cur_min if self._min_knee_in_phase is None else min(self._min_knee_in_phase, cur_min)
 
         if self.state == "UP":
-            if self._down_frame >= self.DEBOUNCE_N:
+            if is_squat and self._down_frame >= self.DEBOUNCE_N:
                 self.state = "DOWN"
                 self._min_knee_in_phase = None
         else:
-            if self._up_frame >= self.DEBOUNCE_N:
+            if is_squat and self._up_frame >= self.DEBOUNCE_N:
                 self.state = "UP"
                 self.reps += 1
                 self.card.set_count(self.reps)
@@ -261,6 +333,18 @@ class ExercisePage(PageBase):
 
                 self.score_overlay.show_score(str(score), 100, text_qcolor=color)
                 self._min_knee_in_phase = None
+
+        if not is_squat:
+            if label in (None, "idle"):
+                self.panel.set_advice("올바른 자세로 준비하세요.")
+            elif label == "pushup":
+                self.panel.set_advice("푸시업이 감지됐어요. 푸시업 모드로 전환하시겠어요?")
+            elif label == "plank":
+                self.panel.set_advice("플랭크 자세 인식. 허리라인을 곧게 유지하세요.")
+            elif label == "shoulder_press":
+                self.panel.set_advice("숄더 프레스 인식. 팔꿈치를 너무 내리지 마세요.")
+            else:
+                self.panel.set_advice("동작 인식 중… 카메라 정면에서 전신이 보이게 서주세요.")
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
