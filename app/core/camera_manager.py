@@ -11,6 +11,10 @@ def _blank_meta():
         "hip_y_norm": None,
         "knee_l_deg": None,
         "knee_r_deg": None,
+        "elbow_l_deg": None,
+        "elbow_r_deg": None,
+        "label": None,       
+        "clf_score": None,   
     }
 
 class CameraWorker(threading.Thread):
@@ -32,7 +36,7 @@ class CameraWorker(threading.Thread):
         cmd = ["v4l2-ctl", "-d", self.device_path, "--set-ctrl=power_line_frequency=2"]
         try:
             subprocess.run(cmd, check=False,
-                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception:
             pass
 
@@ -118,11 +122,16 @@ class CameraWorker(threading.Thread):
         with self._lock:
             return deepcopy(self._latest_meta)
 
-    def set_process(self, fn):
-        with self._lock:
-            self.process_fn = fn
-            self._processor_close = getattr(fn, "close", None) if fn else None
-            self._latest_meta = _blank_meta()
+    def set_process(self, *args, **kwargs):
+        if len(args) == 1:
+            fn = args[0]
+        elif len(args) >= 2:
+            fn = args[1]
+        else:
+            fn = kwargs.get("fn", None)
+        self.process_fn = fn
+        self._processor_close = getattr(fn, "close", None) if fn else None
+        self._latest_meta = _blank_meta()
 
     def close_processor(self):
         if self._processor_close:
