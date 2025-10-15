@@ -1,33 +1,22 @@
 # views/exercise_page.py
 import time, cv2
-from pathlib import Path
+import numpy as np
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QColor, QImage
 from PySide6.QtWidgets import QVBoxLayout
 from core.page_base import PageBase
-from core.pose_manager import PoseProcessor
+from core.hailo_cam_adapter import HailoCamAdapter
+
 from ui.overlay_painter import VideoCanvas, ExerciseCard, ScoreAdvicePanel, ActionButtons
 from ui.score_painter import ScoreOverlay
 
-APP_DIR = Path(__file__).resolve().parents[1]
-
-def _first_exists(*candidates):
-    for p in candidates:
-        if p and Path(p).exists():
-            return str(p)
-    return str(candidates[-1])
-
-YOLO_POSE_ONNX = _first_exists(APP_DIR / "models" / "yolov8m_pose.onnx")
-TCN_ONNX = _first_exists(APP_DIR / "models" / "tcn.onnx")
-TCN_JSON = _first_exists(APP_DIR / "models" / "tcn.json")
-
 DEMO_EXERCISES = [
-    {"name": "스쿼트",   "reps": 32, "avg": 93.2},
-    {"name": "런지",     "reps": 24, "avg": 88.5},
-    {"name": "벤치프레스","reps": 18, "avg": 91.0},
-    {"name": "데드리프트","reps": 20, "avg": 89.1},
-    {"name": "풀업",     "reps": 12, "avg": 85.7},
-    {"name": "푸시업",   "reps": 40, "avg": 94.0},
+    {"name": "스쿼트", "reps": 32, "avg": 93.2},
+    {"name": "런지", "reps": 24, "avg": 88.5},
+    {"name": "벤치프레스", "reps": 18, "avg": 91.0},
+    {"name": "데드리프트", "reps": 20, "avg": 89.1},
+    {"name": "풀업", "reps": 12, "avg": 85.7},
+    {"name": "푸시업", "reps": 40, "avg": 94.0},
     {"name": "사이드 레이즈", "reps": 30, "avg": 90.2},
     {"name": "숨쉬기", "reps": 35, "avg": 81.2},
     {"name": "걷기", "reps": 45, "avg": 73.4},
@@ -35,7 +24,7 @@ DEMO_EXERCISES = [
 ]
 
 _LABEL_KO = {
-    None: "휴식중",     
+    None: "휴식중",
     "idle": "휴식중",
     "plank": "플랭크",
     "pushup": "푸시업",
@@ -52,6 +41,7 @@ class ExercisePage(PageBase):
         super().__init__()
         self.setObjectName("ExercisePage")
 
+        self.cam = None
         self.state = "UP"
         self.reps = 0
         self._down_frame = 0
@@ -62,23 +52,13 @@ class ExercisePage(PageBase):
         self._session_started_ts = None
         self._last_label = None
 
-        # 사람 미탐지 5초 타이머
         self._no_person_since: float | None = None
-        self.NO_PERSON_TIMEOUT_SEC = 5.0
+        self.NO_PERSON_TIMEOUT_SEC = 10.0
         self._entered_at: float = 0.0
         self.NO_PERSON_GRACE_SEC = 1.5
 
-        self.proc = PoseProcessor(
-            onnx_path=str(YOLO_POSE_ONNX),
-            conf_thres=0.10,
-            draw_landmarks=True,
-            name="pose_squat",
-            tcn_onnx=str(TCN_ONNX),
-            tcn_json=str(TCN_JSON),
-            tcn_stride=1,
-            prefer_cpu_for_tcn=True,
-            min_area=2000.0
-        )
+        # 라이프사이클 가드 (OpenCV TLS/타이머 경합 방지)
+        self._active = False
 
         self.canvas = VideoCanvas()
         self.canvas.setContentsMargins(0, 0, 0, 0)
@@ -104,10 +84,37 @@ class ExercisePage(PageBase):
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._tick)
-        self.PAGE_FPS_MS = 33  # ~30fps
+        self.PAGE_FPS_MS = 33
 
-        # 2프레임 연속일 때만 변경
         self._title_hold = {"label": None, "cnt": 0}
+
+    def _draw_skeleton(self, frame_bgr, people, conf_thr=0.65, show_idx=False):
+        EDGES = [(5,7),(7,9),(6,8),(8,10),(5,6),(11,12),(5,11),(6,12),
+                (11,13),(13,15),(12,14),(14,16)]
+        if not people:
+            return
+
+        H, W = frame_bgr.shape[:2]
+        max_len2 = (max(W, H) * 0.6) ** 2  # 너무 긴 엣지는 스킵
+        LINE_COLOR = (144, 238, 144)
+
+        for p in people:
+            pts = p.get("kpt", [])
+            vis = [False] * len(pts)
+            for j, pt in enumerate(pts):
+                if len(pt) < 3:
+                    continue
+                c = float(pt[2])
+                if c >= conf_thr:
+                    vis[j] = True
+
+            for a, b in EDGES:
+                if a < len(pts) and b < len(pts) and vis[a] and vis[b]:
+                    x1_, y1_ = int(pts[a][0]), int(pts[a][1])
+                    x2_, y2_ = int(pts[b][0]), int(pts[b][1])
+                    dx, dy = x1_ - x2_, y1_ - y2_
+                    if (dx*dx + dy*dy) <= max_len2:
+                        cv2.line(frame_bgr, (x1_, y1_), (x2_, y2_), LINE_COLOR, 2)
 
     def _mount_overlays(self):
         self.canvas.clear_overlays()
@@ -142,6 +149,8 @@ class ExercisePage(PageBase):
         return {"duration_sec": duration_sec, "avg_score": round(avg_total, 1), "exercises": per_list}
 
     def _end_clicked(self):
+        # 버튼으로 종료 시에도 안전 종료
+        self._active = False
         if self.timer.isActive():
             self.timer.stop()
         try:
@@ -152,8 +161,8 @@ class ExercisePage(PageBase):
         try:
             if hasattr(self.ctx, "save_workout_session"):
                 self.ctx.save_workout_session(summary)
-        except Exception as e:
-            print(f"[WARN] workout save failed: {e}")
+        except Exception:
+            pass
         if hasattr(self.ctx, "goto_summary"):
             self.ctx.goto_summary(summary)
         self.canvas.clear_overlays()
@@ -179,14 +188,19 @@ class ExercisePage(PageBase):
         self.card.set_title(title_text)
 
         self._mount_overlays()
-        self.ctx.cam.set_process(self.proc)
+
+        if not hasattr(self.ctx, "cam") or self.ctx.cam is None:
+            self.ctx.cam = HailoCamAdapter()
+
         self.ctx.cam.start()
 
+        self._active = True
         if self.timer.isActive():
             self.timer.stop()
         self.timer.start(self.PAGE_FPS_MS)
 
     def on_leave(self, ctx):
+        self._active = False
         if self.timer.isActive():
             self.timer.stop()
         try:
@@ -196,22 +210,23 @@ class ExercisePage(PageBase):
         self.canvas.clear_overlays()
 
     def _tick(self):
+        if not self._active or not self.timer.isActive():
+            return
+
         meta = self.ctx.cam.meta() or {}
         now = time.time()
         in_grace = (now - self._entered_at) < self.NO_PERSON_GRACE_SEC
 
-        # --- no-person 5초 체크 (재진입 유예 반영) ---
+        # --- no-person 타임아웃 ---
         m_ok = bool(meta.get("ok", False))
-
         if in_grace:
-            # 재진입 직후 유예 시간 동안은 카운팅 리셋
             self._no_person_since = None
         else:
             if not m_ok:
                 if self._no_person_since is None:
                     self._no_person_since = now
                 elif (now - self._no_person_since) >= self.NO_PERSON_TIMEOUT_SEC:
-                    # 안전 종료 후 가이드로 이동
+                    self._active = False
                     try:
                         if self.timer.isActive():
                             self.timer.stop()
@@ -221,22 +236,37 @@ class ExercisePage(PageBase):
                         self.ctx.cam.stop()
                     except Exception:
                         pass
-                    self._no_person_since = None  # 플래그 리셋(재진입 시 즉시 튕김 방지)
+                    self._no_person_since = None
                     self._goto("guide")
                     return
             else:
                 self._no_person_since = None
 
-        # --- 프레임 렌더링 ---
+        # --- 프레임 + 스켈레톤 ---
+        if not self._active:
+            return
+
         frame = self.ctx.cam.frame()
         if frame is not None:
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            h, w, ch = rgb.shape
-            qimg = QImage(rgb.data, w, h, ch*w, QImage.Format_RGB888)
-            self.canvas.set_frame(qimg)
+            try:
+                # adapter는 RGB 프레임을 반환 → BGR로 변환하여 그린 뒤 다시 RGB로
+                bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
-        # --- 제목 (2프레임) ---
-        label = meta.get("label", None)  
+                # 스켈레톤 오버레이
+                people = self.ctx.cam.people()
+                self._draw_skeleton(bgr, people, conf_thr=0.65)
+
+                # UI로 보낼 QImage (RGB)
+                frame_rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+                h, w, ch = frame_rgb.shape
+                qimg = QImage(frame_rgb.data, w, h, ch * w, QImage.Format_RGB888).copy()
+                if self._active:
+                    self.canvas.set_frame(qimg)
+            except cv2.error:
+                return
+
+        # --- 제목 (프레임 2회 홀드) ---
+        label = meta.get("label", None)
         new_title = _LABEL_KO.get(label, "휴식중") if label else "휴식중"
 
         hold = self._title_hold
@@ -252,6 +282,7 @@ class ExercisePage(PageBase):
 
         self._update_from_meta(meta)
 
+    # ----- 보조 로직 -----
     def _reset_state(self):
         self.state = "UP"
         self.reps = 0
@@ -264,7 +295,7 @@ class ExercisePage(PageBase):
 
     def _knees_from_meta(self, m):
         kL, kR = m.get("knee_l_deg"), m.get("knee_r_deg")
-        if kL is None or kR is None: 
+        if kL is None or kR is None:
             return None
         return float(kL), float(kR)
 

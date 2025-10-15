@@ -1,8 +1,7 @@
 # core/context.py
 import os
-from core.camera_manager import CameraManager
+from core.hailo_cam_adapter import HailoCamAdapter  
 from core.face_service import FaceService
-from core.config import CAMERA_DEVICE, WIDTH, HEIGHT, FPS
 from db.database import create_engine_and_session, init_db
 from db.models import WorkoutSession, SessionExercise
 
@@ -18,7 +17,8 @@ class AppContext:
 
         self.face = FaceService(self.SessionLocal)
 
-        self.cam = CameraManager(CAMERA_DEVICE, WIDTH, HEIGHT, FPS)
+        self.cam = HailoCamAdapter()
+
         self.router = None
         self.current_exercise = None
 
@@ -87,5 +87,4 @@ class AppContext:
                     avg_score=avg,
                     order_index=idx
                 ))
-
             s.commit()

@@ -1,3 +1,4 @@
+# main.py
 import os
 import sys
 from PySide6.QtWidgets import QApplication, QMainWindow
@@ -10,7 +11,6 @@ from views.start_page import StartPage
 from views.exercise_page import ExercisePage
 from views.guide_page import GuidePage
 from views.summary_page import SummaryPage
-from views.login_page import LoginPage
 from views.enroll_page import EnrollPage
 from views.info_page import InfoPage
 
@@ -27,7 +27,6 @@ class MainWindow(QMainWindow):
         self.router.register("guide", lambda: GuidePage())
         self.router.register("exercise", lambda: ExercisePage())
         self.router.register("summary", lambda: SummaryPage())
-        self.router.register("login",  lambda: LoginPage())
         self.router.register("enroll", lambda: EnrollPage())
         self.router.register("info",   lambda: InfoPage())
 
@@ -35,6 +34,7 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence(Qt.Key_F1), self).activated.connect(lambda: self.router.navigate("start"))
         QShortcut(QKeySequence(Qt.Key_F2), self).activated.connect(lambda: self.router.navigate("guide"))
         QShortcut(QKeySequence(Qt.Key_F3), self).activated.connect(lambda: self.router.navigate("exercise"))
+        QShortcut(QKeySequence(Qt.Key_F4), self).activated.connect(lambda: self.router.navigate("info"))
 
         self.resize(1280, 800)
         self.router.navigate("start")

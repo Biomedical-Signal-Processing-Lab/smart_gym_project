@@ -13,11 +13,11 @@ class StartPage(PageBase):
         self._last_image = None
 
         self._auto_timer = QTimer(self)
-        self._auto_timer.setInterval(1000)     
+        self._auto_timer.setInterval(1000)
         self._auto_timer.timeout.connect(self._auto_login_tick)
-        self._hit_consecutive = 0             
-        self._need_hits = 2                   
-        self._th_sim = 0.50                   
+        self._hit_consecutive = 0
+        self._need_hits = 2
+        self._th_sim = 0.50
 
         self.video_label = QLabel(self)
         self.video_label.setAlignment(Qt.AlignCenter)
@@ -35,8 +35,7 @@ class StartPage(PageBase):
         title.setStyleSheet("""
             color: black;
             font-size: 120px;
-            font-weight: 1000;   
-            text-shadow: 0 2px 6px rgba(0,0,0,0.6);
+            font-weight: 1000;
         """)
 
         subtitle = QLabel("")
@@ -45,7 +44,6 @@ class StartPage(PageBase):
             color: white;
             font-size: 25px;
             font-weight: 400;
-            text-shadow: 0 1px 4px rgba(0,0,0,0.5);
         """)
 
         self.btn_login  = QPushButton("로그인")
@@ -70,7 +68,7 @@ class StartPage(PageBase):
         ov.setContentsMargins(24, 24, 24, 24)
         ov.setSpacing(12)
 
-        ov.addSpacing(120)     
+        ov.addSpacing(120)
         ov.addWidget(title)
         ov.addWidget(subtitle)
         ov.addStretch(20)
@@ -83,7 +81,7 @@ class StartPage(PageBase):
         self.lbl_status = QLabel("")
         self.lbl_status.setAlignment(Qt.AlignCenter)
         self.lbl_status.setStyleSheet("color: white; font-size: 18px;")
-        ov.addWidget(self.lbl_status)     
+        ov.addWidget(self.lbl_status)
 
         stack = QStackedLayout(self)
         stack.setStackingMode(QStackedLayout.StackAll)
@@ -117,11 +115,6 @@ class StartPage(PageBase):
             )
             self.video_label.setPixmap(scaled)
 
-    def _loop_if_needed(self, status):
-        from PySide6.QtMultimedia import QMediaPlayer
-        if status == QMediaPlayer.EndOfMedia:
-            self.player.setPosition(0); self.player.play()
-
     def _go_login(self):
         router = self.parent()
         while router and not hasattr(router, "navigate"): router = router.parent()
@@ -133,17 +126,18 @@ class StartPage(PageBase):
         if router: router.navigate("enroll")
 
     def on_enter(self, ctx):
-        try: 
-            self.player.play()
-        except Exception: 
-            pass
-        
-        self.ctx = ctx
         try:
-            self.ctx.cam.set_process("front", None)  
-            self.ctx.cam.start("front")
+            self.player.play()
         except Exception:
             pass
+
+        self.ctx = ctx
+
+        try:
+            self.ctx.cam.start()   
+        except Exception as e:
+            print("[StartPage] Camera start failed:", e)
+
         self._hit_consecutive = 0
         self.lbl_status.setText("카메라 준비 중… 정면을 바라봐 주세요.")
         self._auto_timer.start()
@@ -156,7 +150,7 @@ class StartPage(PageBase):
     def _auto_login_tick(self):
         frame = None
         try:
-            frame = self.ctx.cam.frame("front")
+            frame = self.ctx.cam.frame()  
             if frame is None:
                 self.lbl_status.setText("카메라 준비 중…")
                 return

@@ -23,7 +23,7 @@ class ImageBadge(QLabel):
         image_path: str,
         bg: str = "#ffffff",
         diameter: int = 96,
-        inner_padding: int = 2,  
+        inner_padding: int = 2,
         parent=None,
     ):
         super().__init__(parent)
@@ -34,7 +34,7 @@ class ImageBadge(QLabel):
 
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAlignment(Qt.AlignCenter)
-        self.setFixedSize(self.diameter, self.diameter)  
+        self.setFixedSize(self.diameter, self.diameter)
 
     def sizeHint(self):
         return self.minimumSizeHint()
@@ -336,8 +336,10 @@ class FaceScanView(BaseCardView):
         self.start_btn.setEnabled(True)
 
         if self.ctx:
-            self.ctx.cam.set_process("front", None)
-            self.ctx.cam.start("front")
+            try:
+                self.ctx.cam.start()
+            except Exception as e:
+                print("[EnrollPage] Camera start failed:", e)
         self.collecting = False
         self._timer.start(30)
 
@@ -358,7 +360,7 @@ class FaceScanView(BaseCardView):
         self._timer.stop()
         if self.ctx:
             try:
-                self.ctx.cam.stop("front")
+                self.ctx.cam.stop()  
             except Exception:
                 pass
         self.start_btn.setText("얼굴 등록 시작")
@@ -379,7 +381,7 @@ class FaceScanView(BaseCardView):
     def _tick(self):
         if not self.ctx:
             return
-        frame = self.ctx.cam.frame("front")
+        frame = self.ctx.cam.frame()  
         if frame is None:
             return
 

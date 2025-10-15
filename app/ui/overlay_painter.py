@@ -274,10 +274,10 @@ class ActionButtons(QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(12)
 
-        self._btn_info = QPushButton("👤  내 정보", self)
+        self._btn_info = QPushButton("내 정보", self)
         self._btn_info.setObjectName("btn-info")
 
-        self._btn_end = QPushButton("🚪  운동 종료", self)
+        self._btn_end = QPushButton("운동 종료", self)
         self._btn_end.setObjectName("btn-end")
 
         lay.addWidget(self._btn_info)

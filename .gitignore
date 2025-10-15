@@ -11,8 +11,10 @@ env/
 venv/
 site-packages/ 
 
+# 파일
 app/data/** 
 !app/data/guide_data.py
+*.log
 
 # IDE
 .vscode/
@@ -21,5 +23,3 @@ app/data/**
 # OS
 .DS_Store
 
-# model
-app/models/*

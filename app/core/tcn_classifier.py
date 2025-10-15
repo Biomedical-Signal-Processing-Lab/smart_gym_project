@@ -47,7 +47,6 @@ class TCNConfig:
             smooth=int(cfg.get("smooth", 7)),
         )
 
-
 class TCNOnnxClassifier:
     """
     ONNX TCN 기반 동작 분류기.
