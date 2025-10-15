@@ -1,4 +1,3 @@
-# core/hailo_cam_adapter.py
 from __future__ import annotations
 import math, threading
 from typing import Any, Dict, List, Optional, Tuple
@@ -7,7 +6,6 @@ import numpy as np
 from . import settings as S
 from .hailo_pose_stream import start_stream, read_latest, stop_stream
 
-# YOLOv8 Pose index
 L_HIP, R_HIP = 11, 12
 L_KNEE, R_KNEE = 13, 14
 L_ANK, R_ANK = 15, 16
@@ -23,7 +21,8 @@ def _angle(a, b, c) -> Optional[float]:
     return float(math.degrees(math.acos(cosv)))
 
 class HailoCamAdapter:
-    def __init__(self, conf_thr: float = 0.65, stride: int = 1):
+    def __init__(self, conf_thr: float = 0.65, stride: int = 1,
+                 onnx_path: str | None = None, json_path: str | None = None):
         self.conf_thr = conf_thr if conf_thr <= 1.5 else conf_thr/100.0
         self.stride = int(max(1, stride))
         self._lock = threading.Lock()
@@ -33,19 +32,28 @@ class HailoCamAdapter:
         self._size: Tuple[int,int] = (S.SRC_WIDTH, S.SRC_HEIGHT)
         self._running = False
 
+        self._tcn_onnx = onnx_path or getattr(S, "TCN_ONNX", None)
+        self._tcn_json = json_path or getattr(S, "TCN_JSON", None)
+
     def start(self):
-        if self._running: return
-        start_stream(conf_thr=self.conf_thr, stride=self.stride)
+        if self._running:
+            return
+        kwargs = dict(conf_thr=self.conf_thr, stride=self.stride)
+        if self._tcn_onnx and self._tcn_json:
+            kwargs.update(onnx_path=self._tcn_onnx, json_path=self._tcn_json)
+        start_stream(**kwargs)
         self._running = True
 
     def stop(self):
-        if not self._running: return
+        if not self._running:
+            return
         stop_stream()
         self._running = False
 
     def _pull_once(self) -> bool:
         fr, people, cls, size = read_latest(timeout=0.01)
-        if fr is None: return False
+        if fr is None:
+            return False
         with self._lock:
             self._frame_rgb = fr
             self._people = people
@@ -64,16 +72,16 @@ class HailoCamAdapter:
             return list(self._people)
 
     def meta(self) -> Dict[str, Any]:
-        """UI에서 쓰는 상태 메타"""
         self._pull_once()
         with self._lock:
             ok = bool(self._people)
             w, h = self._size
             label = self._cls.get("label") if isinstance(self._cls, dict) else None
+            score = float(self._cls.get("score")) if isinstance(self._cls, dict) and "score" in self._cls else None
 
             knees = (None, None)
             if self._people:
-                p = self._people[0]  # 신뢰도 높은 1명
+                p = self._people[0]
                 pts = p.get("kpt", [])
                 def pt(idx):
                     if idx >= len(pts): return None
@@ -87,7 +95,8 @@ class HailoCamAdapter:
             return {
                 "ok": ok,
                 "src_w": w, "src_h": h,
-                "label": label,                # ex) "squat" (TCN 사용 시)
+                "label": label,          
+                "score": score,          # 0.0~1.0
                 "knee_l_deg": knees[0],
                 "knee_r_deg": knees[1],
             }

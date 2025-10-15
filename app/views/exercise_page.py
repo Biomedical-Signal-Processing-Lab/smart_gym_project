@@ -1,6 +1,4 @@
-# views/exercise_page.py
 import time, cv2
-import numpy as np
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QColor, QImage
 from PySide6.QtWidgets import QVBoxLayout
@@ -30,6 +28,11 @@ _LABEL_KO = {
     "pushup": "푸시업",
     "shoulder_press": "숄더 프레스",
     "squat": "스쿼트",
+    "Bentover_Dumbbell": "벤트 오버 덤벨",
+    "Jumping_Jacks": "점핑 잭",
+    "Side_lateral_raise": "사이드 레이즈",
+    "burpee": "버피",
+    "leg_raise": "레그 레이즈",
 }
 
 class ExercisePage(PageBase):
@@ -57,7 +60,6 @@ class ExercisePage(PageBase):
         self._entered_at: float = 0.0
         self.NO_PERSON_GRACE_SEC = 1.5
 
-        # 라이프사이클 가드 (OpenCV TLS/타이머 경합 방지)
         self._active = False
 
         self.canvas = VideoCanvas()
@@ -90,22 +92,21 @@ class ExercisePage(PageBase):
 
     def _draw_skeleton(self, frame_bgr, people, conf_thr=0.65, show_idx=False):
         EDGES = [(5,7),(7,9),(6,8),(8,10),(5,6),(11,12),(5,11),(6,12),
-                (11,13),(13,15),(12,14),(14,16)]
+                 (11,13),(13,15),(12,14),(14,16)]
         if not people:
             return
 
         H, W = frame_bgr.shape[:2]
-        max_len2 = (max(W, H) * 0.6) ** 2  # 너무 긴 엣지는 스킵
-        LINE_COLOR = (144, 238, 144)
+        max_len2 = (max(W, H) * 0.6) ** 2  
+        LINE_COLOR = (144, 238, 144)       
 
         for p in people:
             pts = p.get("kpt", [])
             vis = [False] * len(pts)
             for j, pt in enumerate(pts):
-                if len(pt) < 3:
+                if len(pt) < 3:  
                     continue
-                c = float(pt[2])
-                if c >= conf_thr:
+                if float(pt[2]) >= conf_thr:
                     vis[j] = True
 
             for a, b in EDGES:
@@ -149,7 +150,6 @@ class ExercisePage(PageBase):
         return {"duration_sec": duration_sec, "avg_score": round(avg_total, 1), "exercises": per_list}
 
     def _end_clicked(self):
-        # 버튼으로 종료 시에도 안전 종료
         self._active = False
         if self.timer.isActive():
             self.timer.stop()
@@ -249,14 +249,9 @@ class ExercisePage(PageBase):
         frame = self.ctx.cam.frame()
         if frame is not None:
             try:
-                # adapter는 RGB 프레임을 반환 → BGR로 변환하여 그린 뒤 다시 RGB로
                 bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-
-                # 스켈레톤 오버레이
                 people = self.ctx.cam.people()
                 self._draw_skeleton(bgr, people, conf_thr=0.65)
-
-                # UI로 보낼 QImage (RGB)
                 frame_rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
                 h, w, ch = frame_rgb.shape
                 qimg = QImage(frame_rgb.data, w, h, ch * w, QImage.Format_RGB888).copy()
@@ -265,20 +260,20 @@ class ExercisePage(PageBase):
             except cv2.error:
                 return
 
-        # --- 제목 (프레임 2회 홀드) ---
-        label = meta.get("label", None)
-        new_title = _LABEL_KO.get(label, "휴식중") if label else "휴식중"
+        # --- TCN 라벨 → 한글 제목 (2프레임 홀드) ---
+        raw_label = meta.get("label", None)
+        title_kor = _LABEL_KO.get(raw_label, (raw_label if raw_label else "휴식중"))
 
         hold = self._title_hold
-        if hold["label"] != new_title:
-            hold["label"] = new_title
+        if hold["label"] != title_kor:
+            hold["label"] = title_kor
             hold["cnt"] = 1
         else:
             hold["cnt"] += 1
 
-        if hold["cnt"] >= 2 and new_title != self._last_label:
-            self.card.set_title(new_title)
-            self._last_label = new_title
+        if hold["cnt"] >= 2 and title_kor != self._last_label:
+            self.card.set_title(title_kor)
+            self._last_label = title_kor
 
         self._update_from_meta(meta)
 

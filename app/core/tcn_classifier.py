@@ -15,8 +15,8 @@ def _softmax_axis(x: np.ndarray, axis: int) -> np.ndarray:
 @dataclass
 class TCNConfig:
     classes: Optional[List[str]] = None
-    features: str = "xyconf"          # "xy" | "xyconf"
-    norm: str = "image"               # "image" | "bbox"
+    features: str = "xyconf"          
+    norm: str = "image"              
     win: int = 60
     input_channels: int = 51          # xyconf=51, xy=34
     kpt_order: Optional[List[int]] = None  # 길이 17, src->dst 인덱스 매핑
@@ -49,7 +49,7 @@ class TCNConfig:
 
 class TCNOnnxClassifier:
     """
-    ONNX TCN 기반 동작 분류기.
+    ONNX TCN 기반 동작 분류기 (CPU 전용).
     - 입력: 최근 T개의 포즈 피처(window)
     - 출력: 클래스 확률, EMA 스무딩 선택적 적용
     """
@@ -57,58 +57,47 @@ class TCNOnnxClassifier:
         self,
         onnx_path: str,
         json_path: Optional[str] = None,
-        prefer_cpu: bool = True,
-        session: Any = None,  # 테스트/주입용 (onnxruntime.InferenceSession 호환)
+        session: Any = None,   # onnxruntime.InferenceSession 호환 객체 주입용
     ):
-        # 1) 설정 로드
         self.cfg = TCNConfig.from_json(json_path)
         self.classes: Optional[List[str]] = (self.cfg.classes[:] if self.cfg.classes else None)
 
-        # EMA
         self._ema: Optional[np.ndarray] = None
         self._alpha: float = 1.0 if self.cfg.smooth <= 1 else 2.0 / float(self.cfg.smooth + 1)
 
-        # 2) 버퍼 준비
         self.win: int = int(self.cfg.win)
         self.buf: deque[np.ndarray] = deque(maxlen=self.win)
 
-        # 3) 세션 준비
         self.session = None
         self.input_name: Optional[str] = None
         self.expected_C: Optional[int] = None
         self.expected_T: Optional[int] = None
-        self.channels_first: bool = True  # 내부 입력은 [N, C, T]로 고정
+        self.channels_first: bool = True  # 내부 입력은 [N, C, T]
 
-        try:
-            if session is not None:
-                # 외부에서 주입한 세션(테스트/모킹)
-                self.session = session
-            else:
-                import onnxruntime as ort  # 전역 try를 없애고, 여기서 명확히 로드
-                so = ort.SessionOptions()
-                so.intra_op_num_threads = 1
-                so.inter_op_num_threads = 1
-                providers = ["CPUExecutionProvider"] if prefer_cpu else None
-                self.session = ort.InferenceSession(onnx_path, sess_options=so, providers=providers)
+        if session is not None:
+            self.session = session
+        else:
+            # onnxruntime (CPU) 필요
+            import onnxruntime as ort
+            so = ort.SessionOptions()
+            so.intra_op_num_threads = 1
+            so.inter_op_num_threads = 1
+            self.session = ort.InferenceSession(
+                onnx_path, sess_options=so, providers=["CPUExecutionProvider"]
+            )
 
-            self.input_name = self.session.get_inputs()[0].name
-            self._infer_layout_and_dims()
+        self.input_name = self.session.get_inputs()[0].name
+        self._infer_layout_and_dims()
 
-            # 모델 요구 T가 더 크면 버퍼 확장
-            model_T = int(self.expected_T or self.win)
-            if model_T > self.win:
-                self.win = model_T
-                self.buf = deque(maxlen=self.win)
+        model_T = int(self.expected_T or self.win)
+        if model_T > self.win:
+            self.win = model_T
+            self.buf = deque(maxlen=self.win)
 
-            self.ok: bool = True
-            self.err: Optional[Exception] = None
-        except Exception as e:
-            self.ok = False
-            self.err = e
+        self.ok: bool = True
+        self.err: Optional[Exception] = None
 
-    # 내부 유틸
     def _infer_layout_and_dims(self) -> None:
-        """모델 입력(C,T)과 출력 클래스 수를 추정."""
         C_json = int(self.cfg.input_channels)
         T_try = int(self.cfg.win)
 
@@ -123,11 +112,9 @@ class TCNOnnxClassifier:
         ok_nct = _probe(shape_ntc=False)
         ok_ntc = _probe(shape_ntc=True)
 
-        # 내부적으로는 [N, C, T]로 넣을 것이므로 expected_C/T만 정하면 됨
         self.expected_C = C_json
-        self.expected_T = T_try if (ok_nct or ok_ntc) else T_try  # 실패해도 기본값 유지
+        self.expected_T = T_try if (ok_nct or ok_ntc) else T_try
 
-        # 출력 차원에서 클래스 개수 추론
         out0 = self.session.get_outputs()[0]
         oshape = out0.shape
         if len(oshape) >= 2 and isinstance(oshape[1], int) and oshape[1] > 0:
@@ -159,7 +146,6 @@ class TCNOnnxClassifier:
         return max(people, key=lambda p: (conf_mean(p), area(p)))
 
     def _reorder_kpts(self, pts: Sequence[Sequence[float]]) -> List[Tuple[float, float, Optional[float]]]:
-        """kpt_order가 있으면 src->dst로 재배열."""
         if self.cfg.kpt_order is None:
             return [tuple(p) if len(p) >= 3 else (p[0] if len(p) > 0 else 0.0,
                                                   p[1] if len(p) > 1 else 0.0,
@@ -177,9 +163,7 @@ class TCNOnnxClassifier:
                     out[i_dst] = (float(p[0]), 0.0, None)
         return out
 
-    def _norm_xy(
-        self, x: float, y: float, w: int, h: int, bbox: Optional[Sequence[float]]
-    ) -> Tuple[float, float]:
+    def _norm_xy(self, x: float, y: float, w: int, h: int, bbox: Optional[Sequence[float]]) -> Tuple[float, float]:
         if self.cfg.norm == "bbox" and bbox and len(bbox) >= 4:
             x1, y1, x2, y2 = bbox[:4]
             bw = max(1.0, float(x2 - x1))
@@ -188,7 +172,6 @@ class TCNOnnxClassifier:
         return (x / max(1.0, float(w)), y / max(1.0, float(h)))
 
     def _feat_xy(self, person: Dict[str, Any], size: Tuple[int, int]) -> np.ndarray:
-        """(34,) = (x0,y0,...,x16,y16)"""
         w, h = size
         pts = self._reorder_kpts(person.get("kpt", []))
         bbox = person.get("bbox")
@@ -203,7 +186,6 @@ class TCNOnnxClassifier:
         return xy
 
     def _feat_xyconf(self, person: Dict[str, Any], size: Tuple[int, int]) -> np.ndarray:
-        """(51,) = [x0,y0,...,x16,y16, c0..c16] (xy는 정규화, c는 원본 신뢰도 또는 1)"""
         w, h = size
         pts = self._reorder_kpts(person.get("kpt", []))
         bbox = person.get("bbox")
@@ -244,28 +226,24 @@ class TCNOnnxClassifier:
         self.buf.clear()
         self._ema = None
 
-    # 퍼블릭 API
     def update(self, people: List[Dict[str, Any]], size: Tuple[int, int]) -> Optional[Dict[str, Any]]:
-        if not self.ok or self.session is None:
+        if self.ok is False or self.session is None:
             return None
 
-        # 사람 선택
         person = self._select_person(people)
         if person is None:
             self.reset()
             return None
 
-        # 피처 추가
-        feat = self._make_feat_vec(person, size)  
+        feat = self._make_feat_vec(person, size)
         self.buf.append(feat)
 
         T_need = int(self.expected_T or self.win)
         if len(self.buf) < T_need:
             return None
 
-        # [N, C, T] 입력 구성
-        window = np.stack(list(self.buf)[-T_need:], axis=0) 
-        x = np.transpose(window[None, ...], (0, 2, 1)).astype(np.float32)  
+        window = np.stack(list(self.buf)[-T_need:], axis=0)  # (T,C)
+        x = np.transpose(window[None, ...], (0, 2, 1)).astype(np.float32)  # (1,C,T)
 
         try:
             out = self.session.run(None, {self.input_name: x})
@@ -274,22 +252,20 @@ class TCNOnnxClassifier:
 
         logits = np.asarray(out[0], dtype=np.float32)
 
-        # 출력 형태별 softmax/평균 처리
         if logits.ndim == 2:
             probs = _softmax_axis(logits, axis=1)
         elif logits.ndim == 3:
             if self.classes and logits.shape[1] == len(self.classes):
-                probs_t = _softmax_axis(logits, axis=1)  
-                probs = probs_t.mean(axis=2)            
+                probs_t = _softmax_axis(logits, axis=1)   # (N,C,T)
+                probs = probs_t.mean(axis=2)              # (N,C)
             elif self.classes and logits.shape[2] == len(self.classes):
-                probs_t = _softmax_axis(logits, axis=2)  
-                probs = probs_t.mean(axis=1)             
+                probs_t = _softmax_axis(logits, axis=2)   # (N,T,C)
+                probs = probs_t.mean(axis=1)              # (N,C)
             else:
                 probs = _softmax_axis(logits, axis=-1).mean(axis=-2)
         else:
             probs = _softmax_axis(logits, axis=-1)
 
-        # 클래스 목록 동기화
         n_cls = probs.shape[-1]
         if not self.classes or len(self.classes) != n_cls:
             self.classes = (self.classes or [])[:n_cls]
@@ -298,7 +274,6 @@ class TCNOnnxClassifier:
 
         probs_1d = probs[0]
 
-        # EMA 스무딩
         if self.cfg.smooth > 1:
             if self._ema is None:
                 self._ema = probs_1d

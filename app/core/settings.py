@@ -1,4 +1,3 @@
-# core/settings.py
 import os
 from pathlib import Path
 
@@ -23,8 +22,10 @@ CROPPER_SO = os.environ.get(
     "/usr/lib/aarch64-linux-gnu/hailo/tappas/post_processes/cropping_algorithms/libwhole_buffer.so"
 )
 
+TCN_ONNX = os.environ.get("TCN_ONNX", str(MODELS_DIR / "tcn.onnx"))
+TCN_JSON = os.environ.get("TCN_JSON", str(MODELS_DIR / "tcn.json"))
+
 WINDOW_TITLE = "Hailo YOLOv8-Pose"
 FULLSCREEN   = False
 WINDOW_SIZE  = (SRC_WIDTH, SRC_HEIGHT)
 SHOW_INFO_BAR = False
-

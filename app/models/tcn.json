@@ -1,19 +1,27 @@
 {
   "classes": [
+    "Bentover_Dumbbell",
+    "Jumping_Jacks",
+    "Side_lateral_raise",
+    "burpee",
     "idle",
-    "plank",
+    "leg_raise",
     "pushup",
     "shoulder_press",
     "squat"
   ],
   "input_channels": 51,
   "hparams": {
-    "win": 30,
+    "win": 60,
     "levels": 4,
     "channels": 128,
-    "kernel": 3,
-    "dropout": 0.2
+    "kernel": 5,
+    "dropout": 0.2,
+    "fps": 30.0,
+    "use_velocity": true,
+    "use_acceleration": false,
+    "deriv_kernel": "central5",
+    "pad_mode": "zeros"
   },
-  "features": "xyconf",
-  "norm": "image"
+  "model_type": "deriv"
 }
