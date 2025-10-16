@@ -10,25 +10,24 @@ from . import settings as S
 
 os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
 
-def _build_pipeline(cam, src_w, src_h, src_fps, hef_path, post_so, post_func, cropper_so) -> str:
+def _build_pipeline(cam: str, src_w: int, src_h: int, hef_path: str, post_so: str, post_func: str, cropper_so: str, io_mode: int = 2) -> str:
     return f"""
-v4l2src device={cam} io-mode=2 do-timestamp=true !
-image/jpeg, width={src_w}, height={src_h}, framerate={src_fps}/1 !
-jpegdec !
+v4l2src device={cam} io-mode={io_mode} do-timestamp=true !
+image/jpeg, width={src_w}, height={src_h} !
+jpegparse ! avdec_mjpeg !
 videoconvert ! videoscale !
-video/x-raw,format=RGB,width={src_w},height={src_h},pixel-aspect-ratio=1/1 !
-queue max-size-buffers=3 !
+video/x-raw,format=RGB,width={src_w},height={src_h} !
 hailocropper name=crop so-path={cropper_so} function-name=create_crops use-letterbox=true resize-method=inter-area internal-offset=true
 hailoaggregator name=agg
-crop. ! queue max-size-buffers=3 ! agg.sink_0
-crop. ! queue max-size-buffers=3 !
+crop. ! queue max-size-buffers=5 max-size-bytes=0 max-size-time=0 ! agg.sink_0
+crop. ! queue max-size-buffers=5 max-size-bytes=0 max-size-time=0 !
 hailonet name=det hef-path={hef_path} batch-size=2 vdevice-group-id=1 force-writable=true !
-queue max-size-buffers=3 !
+queue max-size-buffers=5 max-size-bytes=0 !
 hailofilter name=post so-path={post_so} function-name={post_func} qos=false !
-queue max-size-buffers=3 ! agg.sink_1
-agg. ! queue max-size-buffers=3 !
-videoconvert ! video/x-raw,format=BGR,width={src_w},height={src_h} !
-appsink name=data_sink emit-signals=true sync=false max-buffers=1 drop=true
+queue max-size-buffers=5 max-size-bytes=0 ! agg.sink_1
+agg. ! queue max-size-buffers=5 max-size-bytes=0 !
+videoconvert ! video/x-raw,format=BGR !
+appsink name=data_sink caps=video/x-raw,format=BGR emit-signals=true sync=false max-buffers=2 drop=true
 """
 
 def _get_faces_from_buf(buf, w, h) -> List[Dict[str, Any]]:
@@ -66,7 +65,6 @@ def _get_faces_from_buf(buf, w, h) -> List[Dict[str, Any]]:
 def _bbox_area(b):
     return max(0, b[2]-b[0]) * max(0, b[3]-b[1])
 
-# 베스트 1명의 kpt5를 유지
 class HailoFaceStream:
     def __init__(self,
                  hef_path: str,
@@ -92,28 +90,54 @@ class HailoFaceStream:
 
     def start(self):
         if self._running:
-            return 
-        self._stop.clear() 
+            return
+        self._stop.clear()
 
         Gst.init(None)
-        desc = _build_pipeline(
-            self.cam, self.w, self.h, self.fps,
-            self.hef_path, self.post_so, S.FACE_POST_FUNC, self.cropper_so
-        )
-        self._pipe = Gst.parse_launch(desc)
+        last_err = None
+        self._pipe = None
+
+        for m in (0, 2):
+            try:
+                desc = _build_pipeline(
+                    cam=self.cam,
+                    src_w=self.w,
+                    src_h=self.h,
+                    hef_path=self.hef_path,
+                    post_so=self.post_so,
+                    post_func=S.FACE_POST_FUNC,
+                    cropper_so=self.cropper_so,
+                    io_mode=m,
+                )
+                self._pipe = Gst.parse_launch(desc)
+                break
+            except Exception as e:
+                last_err = e
+                self._pipe = None
+
+        if self._pipe is None:
+            raise RuntimeError(f"HailoFaceStream: pipeline build failed: {last_err}")
 
         sink = self._pipe.get_by_name("data_sink")
+        if sink is None:
+            raise RuntimeError("HailoFaceStream: appsink 'data_sink' not found")
+
         self._appsink = sink
-        sink.set_property("max-buffers", 1)
-        sink.set_property("drop", True)
-        sink.set_property("emit-signals", True)
+        try:
+            sink.set_property("max-buffers", 1)
+            sink.set_property("drop", True)
+            sink.set_property("emit-signals", True)
+        except Exception:
+            pass
         sink.connect("new-sample", self._on_new_sample, None)
 
         self._loop = GLib.MainLoop()
         self._attach_bus_watch(self._loop, self._pipe)
 
-        if self._pipe.set_state(Gst.State.PLAYING) == Gst.StateChangeReturn.FAILURE:
+        r = self._pipe.set_state(Gst.State.PLAYING)
+        if r == Gst.StateChangeReturn.FAILURE:
             self._pipe.set_state(Gst.State.NULL)
+            self._pipe = None
             raise RuntimeError("HailoFaceStream: pipeline start failed")
 
         threading.Thread(target=self._loop.run, daemon=True).start()
@@ -128,34 +152,37 @@ class HailoFaceStream:
                 self._appsink.set_property("emit-signals", False)
         except Exception:
             pass
+
         if self._pipe is not None:
             self._pipe.set_state(Gst.State.NULL)
             self._pipe = None
+
         self._appsink = None
 
         if self._loop is not None:
-            try: self._loop.quit()
-            except Exception: pass
+            try:
+                self._loop.quit()
+            except Exception:
+                pass
             self._loop = None
+
         try:
-            while True: self._out_q.get_nowait()
+            while True:
+                self._out_q.get_nowait()
         except queue.Empty:
             pass
+
         self._running = False
 
     def _attach_bus_watch(self, loop, pipe):
         bus = pipe.get_bus()
         def on_msg(bus, msg):
-            if msg.type in (Gst.MessageType.ERROR, Gst.MessageType.EOS):
-                try:
-                    if msg.type == Gst.MessageType.ERROR:
-                        msg.parse_error()
-                finally:
-                    self._stop.set()
-                    try:
-                        loop.quit()
-                    except Exception:
-                        ...
+            if msg.type == Gst.MessageType.ERROR:
+                err, _dbg = msg.parse_error()
+                print(f"[GST][face] ERROR: {err}", flush=True)
+                self._stop.set()
+                try: loop.quit()
+                except Exception: pass
             return True
         bus.add_signal_watch()
         bus.connect("message", on_msg)
