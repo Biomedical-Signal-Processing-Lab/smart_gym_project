@@ -465,6 +465,17 @@ class EnrollPage(PageBase):
 
     def on_enter(self, ctx):
         self.ctx = ctx
+        try:
+            if hasattr(self.ctx, "cam") and self.ctx.cam:
+                self.ctx.cam.stop()
+        except Exception:
+            pass
+        
+        try:
+            self.ctx.face.start_stream()
+        except Exception:
+            pass
+        
         self._reset_ui()
 
     def on_leave(self, _):
@@ -473,6 +484,13 @@ class EnrollPage(PageBase):
             self.face_scan_view.end()
         except Exception:
             pass
+
+        try:
+            if self.ctx and hasattr(self.ctx, "face"):
+                self.ctx.face.stop_stream()
+        except Exception:
+            pass
+
 
     def resizeEvent(self, e):
         super().resizeEvent(e)

@@ -10,30 +10,29 @@ from gi.repository import Gst, GLib
 from . import settings as S
 from .tcn_classifier import TCNOnnxClassifier
 
-os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")  
+os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
 
 def _build_pipeline(io_mode: int = 2) -> str:
     return f"""
 v4l2src device={S.CAM} io-mode={io_mode} do-timestamp=true !
-image/jpeg, width={S.SRC_WIDTH}, height={S.SRC_HEIGHT}, framerate={S.SRC_FPS}/1 !
-jpegdec !
+image/jpeg, width={S.SRC_WIDTH}, height={S.SRC_HEIGHT} !
+jpegparse ! avdec_mjpeg !
 videoconvert ! videoscale !
-video/x-raw,format=RGB,width={S.SRC_WIDTH},height={S.SRC_HEIGHT},pixel-aspect-ratio=1/1 !
-queue name=inference_wrapper_input_q leaky=no max-size-buffers=3 max-size-bytes=0 max-size-time=0 !
+video/x-raw,format=RGB,width={S.SRC_WIDTH},height={S.SRC_HEIGHT} !
+queue name=inference_wrapper_input_q leaky=no max-size-buffers=5 max-size-bytes=0 max-size-time=0 !
 hailocropper name=crop so-path={S.CROPPER_SO} function-name=create_crops use-letterbox=true resize-method=inter-area internal-offset=true
 hailoaggregator name=agg
 crop. ! queue name=bypass_q leaky=no max-size-buffers=20 max-size-bytes=0 max-size-time=0 ! agg.sink_0
-crop. ! queue name=inf_scale_q leaky=no max-size-buffers=3 max-size-bytes=0 max-size-time=0 ! videoscale n-threads=2 qos=false ! videoconvert n-threads=2 !
-video/x-raw,pixel-aspect-ratio=1/1 !
-queue name=inf_hnet_q leaky=no max-size-buffers=3 max-size-bytes=0 !
+crop. ! queue name=inf_scale_q leaky=no max-size-buffers=5 max-size-bytes=0 max-size-time=0 ! videoscale n-threads=2 qos=false ! videoconvert n-threads=2 !
+queue name=inf_hnet_q leaky=no max-size-buffers=5 max-size-bytes=0 !
 hailonet name=hnet hef-path={S.HEF} batch-size=2 vdevice-group-id=1 force-writable=true !
-queue name=inf_post_q leaky=no max-size-buffers=3 max-size-bytes=0 !
+queue name=inf_post_q leaky=no max-size-buffers=5 max-size-bytes=0 !
 hailofilter name=post so-path={S.POST_SO} function-name={S.POST_FUNC} qos=false !
-queue name=inf_out_q leaky=no max-size-buffers=3 max-size-bytes=0 ! agg.sink_1
-agg. ! queue leaky=no max-size-buffers=3 max-size-bytes=0 !
+queue name=inf_out_q leaky=no max-size-buffers=5 max-size-bytes=0 ! agg.sink_1
+agg. ! queue leaky=no max-size-buffers=5 max-size-bytes=0 !
 videoconvert n-threads=2 qos=false !
-video/x-raw,format=BGR,width={S.SRC_WIDTH},height={S.SRC_HEIGHT} !
-appsink name=data_sink emit-signals=true sync=false max-buffers=1 drop=true
+video/x-raw,format=BGR !
+appsink name=data_sink caps=video/x-raw,format=BGR emit-signals=true sync=false max-buffers=2 drop=true
 """
 
 def _f(obj, name):
@@ -94,7 +93,7 @@ def _iou(a, b) -> float:
     iw,ih = max(0,ix2-ix1), max(0,iy2-iy1)
     inter = iw*ih
     areaA = max(0,ax2-ax1)*max(0,ay2-ay1)
-    areaB = max(0,bx2-bx1)*max(0,ay2-ay1)
+    areaB = max(0,bx2-bx1)*max(0,by2-by1)
     uni = areaA + areaB - inter if inter>0 else areaA + areaB
     return inter/uni if uni>0 else 0.0
 
@@ -134,18 +133,18 @@ class HailoPoseStream:
 
     def start(self):
         Gst.init(None)
-
         pipe = None
-        for m in (2, 0):
+        last_err = None
+        for m in (0, 2):
             try:
                 desc = _build_pipeline(io_mode=m)
                 pipe = Gst.parse_launch(desc)
                 break
-            except Exception:
-                if m == 0:
-                    raise
+            except Exception as e:
+                last_err = e
+                pipe = None
         if pipe is None:
-            raise RuntimeError("Failed to build pipeline")
+            raise RuntimeError(f"Failed to build pipeline: {last_err}")
         self._pipe = pipe
 
         sink = pipe.get_by_name("data_sink")
@@ -161,11 +160,11 @@ class HailoPoseStream:
         sink.connect("new-sample", self._on_new_sample, None)
 
         self._loop = GLib.MainLoop()
-        self._attach_bus_watch(self._loop, self._pipe, "infer")
+        self._attach_bus_watch(self._loop, self._pipe)
 
-        r1 = self._pipe.set_state(Gst.State.PLAYING)
-        if r1 == Gst.StateChangeReturn.FAILURE:
+        if self._pipe.set_state(Gst.State.PLAYING) == Gst.StateChangeReturn.FAILURE:
             self._pipe.set_state(Gst.State.NULL)
+            self._pipe = None
             raise RuntimeError("pipeline start failed")
 
         threading.Thread(target=self._loop.run, daemon=True).start()
@@ -187,9 +186,11 @@ class HailoPoseStream:
             pass
         if self._pipe is not None:
             self._pipe.set_state(Gst.State.NULL)
+            self._pipe = None
         if self._loop is not None:
             try: self._loop.quit()
             except Exception: pass
+            self._loop = None
         try:
             while True: self._out_q.get_nowait()
         except queue.Empty:
@@ -232,18 +233,15 @@ class HailoPoseStream:
             except queue.Full: pass
         return Gst.FlowReturn.OK
 
-    def _attach_bus_watch(self, loop, pipe, name):
+    def _attach_bus_watch(self, loop, pipe):
         bus = pipe.get_bus()
         def on_msg(bus, msg):
-            t = msg.type
-            if t in (Gst.MessageType.ERROR, Gst.MessageType.EOS):
-                try:
-                    if t == Gst.MessageType.ERROR:
-                        msg.parse_error()
-                finally:
-                    self._stop.set()
-                    try: loop.quit()
-                    except Exception: pass
+            if msg.type == Gst.MessageType.ERROR:
+                err, _dbg = msg.parse_error()
+                print(f"[GST][pose] ERROR: {err}", flush=True)
+                self._stop.set()
+                try: loop.quit()
+                except Exception: pass
             return True
         bus.add_signal_watch()
         bus.connect("message", on_msg)
@@ -303,10 +301,14 @@ def start_stream(**kwargs) -> HailoPoseStream:
     return _stream_singleton
 
 def read_latest(timeout: Optional[float] = 0.0):
-    return _stream_singleton.read(timeout) if _stream_singleton else (None, [], None, (S.SRC_WIDTH, S.SRC_HEIGHT))
+    if _stream_singleton is None:
+        return (None, [], None, (S.SRC_WIDTH, S.SRC_HEIGHT))
+    return _stream_singleton.read(timeout)
 
 def stop_stream():
     global _stream_singleton
     if _stream_singleton is not None:
-        _stream_singleton.stop()
-        _stream_singleton = None
+        try:
+            _stream_singleton.stop()
+        finally:
+            _stream_singleton = None

@@ -9,7 +9,8 @@ MODELS_DIR = APP_ROOT / "models"
 # 카메라 
 CAM = os.environ.get(
     "CAM",
-    "/dev/v4l/by-id/usb-GENERAL_GENERAL_WEBCAM_JH1901_20240311_v007-video-index0"
+    # "/dev/v4l/by-id/usb-GENERAL_GENERAL_WEBCAM_JH1901_20240311_v007-video-index0"
+    "/dev/v4l/by-id/usb-HD_Camera_Manufacturer_USB_2.0_Camera-video-index0"
 )
 
 SRC_WIDTH  = int(os.environ.get("SRC_WIDTH",  "1280"))
