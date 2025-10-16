@@ -1,7 +1,7 @@
 # views/enroll_page.py
 import os
 import cv2
-
+import numpy as np
 from core.page_base import PageBase
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QPixmap, QPainter, QColor, QImage, QGuiApplication
@@ -59,7 +59,6 @@ class ImageBadge(QLabel):
             p.drawPixmap(x, y, icon)
 
         p.end()
-
 
 class GlassCard(QFrame):
     def __init__(self, parent=None):
@@ -335,11 +334,6 @@ class FaceScanView(BaseCardView):
         self.start_btn.setText("얼굴 등록 시작")
         self.start_btn.setEnabled(True)
 
-        if self.ctx:
-            try:
-                self.ctx.cam.start()
-            except Exception as e:
-                print("[EnrollPage] Camera start failed:", e)
         self.collecting = False
         self._timer.start(30)
 
@@ -358,11 +352,6 @@ class FaceScanView(BaseCardView):
         hide_keyboard()
         self.collecting = False
         self._timer.stop()
-        if self.ctx:
-            try:
-                self.ctx.cam.stop()  
-            except Exception:
-                pass
         self.start_btn.setText("얼굴 등록 시작")
         self.start_btn.setEnabled(True)
 
@@ -381,19 +370,30 @@ class FaceScanView(BaseCardView):
     def _tick(self):
         if not self.ctx:
             return
-        frame = self.ctx.cam.frame()  
-        if frame is None:
+
+        # Hailo 얼굴 스트림에서 직접 프레임(BGR) 읽기
+        fr_bgr = None
+        try:
+            sb = getattr(self.ctx.face, "backend", None)
+            st = getattr(sb, "stream", None) if sb else None
+            if st:
+                fr_bgr, _faces, _ = st.read(timeout=0.0)  
+        except Exception:
+            fr_bgr = None
+
+        if fr_bgr is None:
             return
 
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        rgb = cv2.cvtColor(fr_bgr, cv2.COLOR_BGR2RGB)
+        rgb = np.ascontiguousarray(rgb)                    
         h, w, ch = rgb.shape
-        qimg = QImage(rgb.data, w, h, ch * w, QImage.Format_RGB888)
+        qimg = QImage(rgb.data, w, h, rgb.strides[0], QImage.Format_RGB888).copy()
         self._render_frame(qimg)
 
         if not self.collecting:
             return
 
-        emb = self.ctx.face.detect_and_embed(frame)
+        emb = self.ctx.face.detect_and_embed(fr_bgr)
         if emb is not None:
             self.collected.append(emb)
             self.bar.setValue(len(self.collected))
@@ -402,10 +402,19 @@ class FaceScanView(BaseCardView):
             try:
                 self.ctx.face.add_user_samples(self.name, self.collected)
                 self.end()
-                QMessageBox.information(self, "완료", f"{self.name} 등록이 완료되었습니다.")
+                msg_box = QMessageBox(self)
+                msg_box.setWindowTitle("완료")
+                msg_box.setText(f"{self.name} 등록이 완료되었습니다.")
+                msg_box.setStyleSheet("QLabel { color: black; }")
+                msg_box.exec()
             except Exception as e:
                 self.end()
-                QMessageBox.critical(self, "저장 실패", str(e))
+                err_box = QMessageBox(self)
+                err_box.setIcon(QMessageBox.Critical)
+                err_box.setWindowTitle("저장 실패")
+                err_box.setText(str(e))
+                err_box.setStyleSheet("QLabel { color: black; }")
+                err_box.exec()
             finally:
                 self.finished.emit()
 

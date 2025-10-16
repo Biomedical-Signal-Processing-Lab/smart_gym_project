@@ -43,7 +43,7 @@ class MainWindow(QMainWindow):
         self.showNormal() if self.isFullScreen() else self.showFullScreen()
 
 if __name__ == "__main__":
-    os.environ["QT_IM_MODULE"] = "qtvirtualkeyboard"
+    # os.environ["QT_IM_MODULE"] = "qtvirtualkeyboard"
     QLocale.setDefault(QLocale(QLocale.Korean, QLocale.SouthKorea))
     
     app = QApplication(sys.argv)
