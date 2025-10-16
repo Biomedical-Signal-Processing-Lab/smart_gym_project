@@ -46,21 +46,16 @@ class StartPage(PageBase):
             font-weight: 400;
         """)
 
-        self.btn_login  = QPushButton("로그인")
         self.btn_signup = QPushButton("회원가입")
-
-        for b in (self.btn_login, self.btn_signup):
-            b.setFixedHeight(45)
-            b.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-            b.setStyleSheet("""
-                QPushButton {
-                    padding: 8px 24px; font-size: 25px; background: rgba(255,255,255,0.9);
-                    color: black; border: none; border-radius: 8px;
-                }
-                QPushButton:hover { background: rgba(255,255,255,1.0); }
-            """)
-
-        self.btn_login.clicked.connect(self._go_login)
+        self.btn_signup.setFixedHeight(45)
+        self.btn_signup.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.btn_signup.setStyleSheet("""
+            QPushButton {
+                padding: 8px 24px; font-size: 25px; background: rgba(255,255,255,0.9);
+                color: black; border: none; border-radius: 8px;
+            }
+            QPushButton:hover { background: rgba(255,255,255,1.0); }
+        """)
         self.btn_signup.clicked.connect(self._go_enroll)
 
         overlay = QWidget(self)
@@ -74,8 +69,11 @@ class StartPage(PageBase):
         ov.addStretch(20)
 
         h = QHBoxLayout()
-        h.addStretch(1); h.addWidget(self.btn_login); h.addSpacing(16)
-        h.addWidget(self.btn_signup); h.addStretch(1); ov.addLayout(h); ov.addStretch(3)
+        h.addStretch(1)
+        h.addWidget(self.btn_signup)
+        h.addStretch(1)
+        ov.addLayout(h)
+        ov.addStretch(3)
         overlay.setStyleSheet("background: transparent;")
 
         self.lbl_status = QLabel("")
@@ -115,50 +113,41 @@ class StartPage(PageBase):
             )
             self.video_label.setPixmap(scaled)
 
-    def _go_login(self):
-        router = self.parent()
-        while router and not hasattr(router, "navigate"): router = router.parent()
-        if router: router.navigate("login")
-
     def _go_enroll(self):
         router = self.parent()
         while router and not hasattr(router, "navigate"): router = router.parent()
         if router: router.navigate("enroll")
 
     def on_enter(self, ctx):
+        self.ctx = ctx
         try:
-            self.player.play()
+            self.ctx.face.start_stream()
         except Exception:
             pass
-
-        self.ctx = ctx
-
-        try:
-            self.ctx.cam.start()   
-        except Exception as e:
-            print("[StartPage] Camera start failed:", e)
-
         self._hit_consecutive = 0
         self.lbl_status.setText("카메라 준비 중… 정면을 바라봐 주세요.")
         self._auto_timer.start()
 
     def on_leave(self, ctx):
-        try: self.player.pause()
-        except Exception: pass
         self._auto_timer.stop()
+        try:
+            self.ctx.face.stop_stream()
+        except Exception:
+            pass
 
     def _auto_login_tick(self):
-        frame = None
         try:
-            frame = self.ctx.cam.frame()  
-            if frame is None:
+            sb = getattr(self.ctx.face, "backend", None)
+            st = getattr(sb, "stream", None) if sb else None
+            running = bool(getattr(st, "_running", False))
+            if not running:
                 self.lbl_status.setText("카메라 준비 중…")
                 return
         except Exception:
-            self.lbl_status.setText("카메라 오류. 장치를 확인해 주세요.")
+            self.lbl_status.setText("카메라 준비 중…")
             return
 
-        emb = self.ctx.face.detect_and_embed(frame)
+        emb = self.ctx.face.detect_and_embed(None)
         if emb is None:
             self._hit_consecutive = 0
             self.lbl_status.setText("얼굴을 화면 중앙에 맞추고 정면을 바라봐 주세요.")
@@ -167,7 +156,7 @@ class StartPage(PageBase):
         name, sim = self.ctx.face.match(emb, threshold=self._th_sim)
         if name:
             self._hit_consecutive += 1
-            self.lbl_status.setText(f"{name} 님으로 인식 중… ({self._hit_consecutive}/{self._need_hits})")
+            self.lbl_status.setText(f"{name} 님으로 인식 중…")
             if self._hit_consecutive >= self._need_hits:
                 try:
                     from db.models import User

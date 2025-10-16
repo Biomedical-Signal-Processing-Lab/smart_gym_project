@@ -1,51 +1,76 @@
-# core/face_service.py
 from __future__ import annotations
 import numpy as np
+import cv2
 from typing import List, Tuple, Optional
 from db.models import User, FaceEmbedding
-from .face_backends import FaceBackendBase, InsightFaceBackend  # , HailoFaceBackend (추후)
+from . import settings as S
+from .face_backends import FaceBackendBase, HailoFaceBackend
+
+_ARC_STD_5PTS = np.array([
+    [38.2946, 51.6963],
+    [73.5318, 51.5014],
+    [56.0252, 71.7366],
+    [41.5493, 92.3655],
+    [70.7299, 92.2041],
+], dtype=np.float32)
+
+def align_by_5pts(bgr: np.ndarray, kpt5: List[Tuple[int, int]], out_size: Tuple[int,int] = (112, 112)) -> np.ndarray:
+    src = np.array(kpt5, dtype=np.float32)
+    dst = _ARC_STD_5PTS.copy()
+    if out_size != (112, 112):
+        sx = out_size[0] / 112.0
+        sy = out_size[1] / 112.0
+        dst[:, 0] *= sx
+        dst[:, 1] *= sy
+    M, _ = cv2.estimateAffinePartial2D(src, dst, method=cv2.LMEDS)
+    if M is None:
+        x = int(min(p[0] for p in kpt5)); y = int(min(p[1] for p in kpt5))
+        X = int(max(p[0] for p in kpt5)); Y = int(max(p[1] for p in kpt5))
+        x = max(0, x); y = max(0, y)
+        crop = bgr[y:Y, x:X].copy() if (Y > y and X > x) else bgr
+        return cv2.resize(crop, out_size, interpolation=cv2.INTER_LINEAR)
+    return cv2.warpAffine(bgr, M, out_size, flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
 
 class FaceService:
-    """
-    얼굴 임베딩 추출 + DB 저장/조회 + 캐시 매칭
-    - 기본: InsightFace CPU (설치 안되어 있으면 자동 비활성)
-    - Hailo 백엔드(레티나+아크페이스)는 추후 같은 인터페이스로 플러그인
-    """
     def __init__(self, SessionLocal, backend: FaceBackendBase | None = None):
         self.SessionLocal = SessionLocal
-
-        # 백엔드 자동 선택: 외부에서 주입 없으면 InsightFace 시도 → 실패 시 None
         self.backend: Optional[FaceBackendBase] = backend
-        if self.backend is None:
-            try:
-                self.backend = InsightFaceBackend(app_name="buffalo_l", det_size=(640, 640))
-                self.backend.warmup()
-                self._enabled = True
-            except Exception as e:
-                # 설치/런타임 문제가 있으면 비활성화 모드로
-                print(f"[FaceService] InsightFace 사용 불가: {e}")
-                self.backend = None
-                self._enabled = False
-        else:
-            try:
-                self.backend.warmup()
-                self._enabled = True
-            except Exception as e:
-                print(f"[FaceService] 제공된 백엔드 초기화 실패: {e}")
-                self.backend = None
-                self._enabled = False
+        self._enabled = False
 
-        self._cache: list[tuple[int, str, np.ndarray]] = []
+        try:
+            if self.backend is None:
+                self.backend = HailoFaceBackend(
+                    det_hef=getattr(S, "FACE_DET_HEF", None),
+                    post_so=getattr(S, "FACE_POST_SO", None),
+                    cropper_so=getattr(S, "CROPPER_SO", None),
+                    cam=getattr(S, "CAM", None),
+                    det_input_size=(S.SRC_WIDTH, S.SRC_HEIGHT),
+                    arcface_app=S.ARC_APP_NAME,
+                    arcface_input=getattr(S, "ARC_INPUT_HW", (112, 112)),
+                )
+            self._enabled = True
+        except Exception:
+            self.backend = None
+            self._enabled = False
+
+        self._cache = []
         self._rebuild_cache()
 
-    # 상태
+    def start_stream(self):
+        if self.enabled and self.backend:
+            try: self.backend.start()
+            except Exception: pass
+
+    def stop_stream(self):
+        if self.backend:
+            try: self.backend.stop()
+            except Exception: pass
+
     @property
     def enabled(self) -> bool:
-        return bool(self._enabled and self.backend is not None)
+        return bool(getattr(self, "_enabled", False) and self.backend is not None)
 
-    # --- 캐시 관리 ---
     def _rebuild_cache(self) -> None:
-        """DB 임베딩을 L2 정규화해 캐시 구성"""
         self._cache.clear()
         with self.SessionLocal() as s:
             rows = (
@@ -58,21 +83,14 @@ class FaceService:
                 n = float(np.linalg.norm(emb)) + 1e-9
                 self._cache.append((int(user.id), str(user.name), emb / n))
 
-    # --- 추론 ---
-    def detect_and_embed(self, bgr: np.ndarray) -> Optional[np.ndarray]:
-        """
-        최대 얼굴 1개 임베딩 반환. 백엔드가 비활성화면 None.
-        """
+    def detect_and_embed(self, bgr: Optional[np.ndarray]) -> Optional[np.ndarray]:
         if not self.enabled:
             return None
         try:
             return self.backend.detect_and_embed(bgr)
-        except Exception as e:
-            # 얼굴 기능이 앱 전체를 멈추지 않도록 방어
-            print(f"[FaceService] detect_and_embed 실패: {e}")
+        except Exception:
             return None
 
-    # --- 등록 ---
     def add_user_samples(self, name: str, embeddings: List[np.ndarray]) -> int:
         safe = (name or "").strip()
         if not safe:
@@ -83,7 +101,7 @@ class FaceService:
         with self.SessionLocal() as s:
             user = User(name=safe)
             s.add(user)
-            s.flush()  # id 확보
+            s.flush()
 
             for emb in embeddings:
                 emb = np.asarray(emb, dtype=np.float32)
@@ -95,11 +113,7 @@ class FaceService:
         self._rebuild_cache()
         return uid
 
-    # --- 매칭 ---
-    def match(self, emb: np.ndarray, threshold: float = 0.40) -> tuple[Optional[str], float]:
-        """
-        코사인 유사도 최댓값이 threshold 이상이면 (name, sim), 아니면 (None, best_sim)
-        """
+    def match(self, emb: np.ndarray, threshold: float = S.FACE_MATCH_THRESHOLD) -> tuple[Optional[str], float]:
         if not self._cache:
             return None, 0.0
 
@@ -114,7 +128,6 @@ class FaceService:
 
         return (best_name, best_sim) if best_sim >= threshold else (None, best_sim)
 
-    # --- 정리 ---
     def close(self) -> None:
         try:
             if self.backend:

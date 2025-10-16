@@ -189,6 +189,11 @@ class ExercisePage(PageBase):
 
         self._mount_overlays()
 
+        try:
+            self.ctx.face.stop_stream() 
+        except Exception:
+            pass
+
         if not hasattr(self.ctx, "cam") or self.ctx.cam is None:
             self.ctx.cam = HailoCamAdapter()
 
