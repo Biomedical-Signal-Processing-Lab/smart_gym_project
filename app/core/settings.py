@@ -33,29 +33,20 @@ TCN_ONNX = os.environ.get("TCN_ONNX", str(MODELS_DIR / "tcn.onnx"))
 TCN_JSON = os.environ.get("TCN_JSON", str(MODELS_DIR / "tcn.json"))
 
 # InsightFace 설정
-ARC_APP_NAME  = os.environ.get("ARC_APP_NAME", "buffalo_l")
-ARC_DET_SIZE  = tuple(map(int, os.environ.get("ARC_DET_SIZE", "640,640").split(",")))
+FACE_APP_NAME  = os.environ.get("FACE_APP_NAME", "buffalo_l")
+FACE_DET_SIZE  = tuple(map(int, os.environ.get("FACE_DET_SIZE", "640,640").split(",")))
+FACE_INPUT_HW  = tuple(map(int, os.environ.get("FACE_INPUT_HW", "112,112").split(","))) 
 FACE_MATCH_THRESHOLD = float(os.environ.get("FACE_MATCH_THRESHOLD", "0.40"))
 
 INSIGHTFACE_HOME = Path(os.environ.get("INSIGHTFACE_HOME",str(MODELS_DIR / "insightface_cache")))
 
-# --- 얼굴 인식 파이프 선택 ---
 USE_HAILO_FACE = True            # Hailo 검출 사용
-FACE_USE_HAILO_EMBED = False     # 임베딩은 CPU(InsightFace)로
 
 # --- Hailo 얼굴 검출/임베딩 리소스 ---
 FACE_DET_HEF   = str(MODELS_DIR / "retinaface_mobilenet_v1.hef")
 FACE_POST_SO   = "/usr/lib/aarch64-linux-gnu/hailo/tappas/post_processes/libface_detection_post.so"
-FACE_POST_FUNC = "retinaface"   
+FACE_POST_FUNC = "retinaface"    
 
-# ArcFace on Hailo (임베딩) 
-ARC_HEF        = os.environ.get("ARC_HEF",       str(MODELS_DIR / "arcface_mobilenet.hef"))
-ARC_POST_SO    = os.environ.get("ARC_POST_SO",   str(MODELS_DIR / "libarcface_post.so"))
-ARC_POST_FUNC  = os.environ.get("ARC_POST_FUNC", "postprocess")  
-ARC_INPUT_HW   = tuple(map(int, os.environ.get("ARC_INPUT_HW", "112,112").split(",")))
-ARC_EMB_DIM    = int(os.environ.get("ARC_EMB_DIM", "512"))       
-
-# UI / 윈도우
 WINDOW_TITLE   = os.environ.get("WINDOW_TITLE", "Hailo YOLOv8-Pose")
 FULLSCREEN     = bool(int(os.environ.get("FULLSCREEN", "0")))
 WINDOW_SIZE    = (SRC_WIDTH, SRC_HEIGHT)
