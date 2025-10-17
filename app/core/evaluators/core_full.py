@@ -133,7 +133,7 @@ class CoreFullEvaluator(ExerciseEvaluator):
         return self._update_burpee(meta)
     
 
-    def _update_burpee(self, meta: Dict[str, Any]) -> Optional[EvalResult]:
+    def _update_burpee(self, meta: Dict[str, Any], label) -> Optional[EvalResult]:
         if label:
             self.mode = label
         if self.mode != "burpee":

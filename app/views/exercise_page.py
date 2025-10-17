@@ -131,6 +131,7 @@ class ExercisePage(PageBase):
         pa_h = int(pa_w * 0.88)
         self.pose_panel.setFixedSize(pa_w, pa_h)
 
+
     def _goto(self, page: str):
         router = self.parent()
         while router and not hasattr(router, "navigate"):
@@ -258,6 +259,7 @@ class ExercisePage(PageBase):
             return
 
         frame = self.ctx.cam.frame()
+
         if frame is not None:
             try:
                 bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
@@ -272,6 +274,7 @@ class ExercisePage(PageBase):
                             kcf = np.array([(pt[2] if len(pt) > 2 else 1.0) for pt in kpt], dtype=np.float32)
 
                             # meta에 각도 자동 추가 (Elbow, Shoulder, Knee, Hip 등)
+
                             angles = update_meta_with_angles(
                                 meta,
                                 kxy,
@@ -280,11 +283,12 @@ class ExercisePage(PageBase):
                                 ema=0.2,
                                 prev=getattr(self, "_angles_prev", None),
                             )
+                            #print(angles)
                             self._angles_prev = angles
                             meta["_kpt"] = kpt   # ← 좌표 직접 쓰는 evaluator(버피)가 사용
-                            
-                            if angles is not None:
-                                self.pose_panel.set_angles(angles)
+
+
+                        
                 except Exception as _e:
                     # 각도 계산 오류 발생해도 멈추지 않게
                     print(f"[angle_calc error] {_e}")
@@ -320,6 +324,7 @@ class ExercisePage(PageBase):
         if self._last_eval_label != label:
             self._last_eval_label = label
             self._evaluator = get_evaluator_by_label(label) if label not in (None, "idle") else None
+            print(type(self._evaluator))
             if self._evaluator:
                 self._evaluator.reset()
 

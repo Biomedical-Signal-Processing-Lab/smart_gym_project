@@ -1,32 +1,60 @@
 # app/core/evaluators/__init__.py
-from .base import EvalResult, ExerciseEvaluator
 from .lower_body import LowerBodyEvaluator
-from .upper_body import UpperBodyEvaluator
-from .core_full import CoreFullEvaluator
+from .upper_body import UpperBodyEvaluator   # ✅ [ADD]
+from .base import EvalResult, ExerciseEvaluator
 
-# 라벨 정규화 (대소문자/언더스코어 차이를 흡수)
-def _normalize_label(label: str) -> str:
+__all__ = [
+    "get_evaluator_by_label",
+    "EvalResult",
+    "ExerciseEvaluator",
+    "LowerBodyEvaluator",
+    "UpperBodyEvaluator",   # ✅ [ADD]
+]
+
+# ===== 싱글톤 보관 (Evaluator 인스턴스 1회 생성) =====
+_EVAL_SINGLETONS = {
+    # 하체
+    "squat": LowerBodyEvaluator("squat"),
+    "leg_raise": LowerBodyEvaluator("leg_raise"),
+
+    # 상체
+    "pushup": UpperBodyEvaluator("pushup"),
+    "shoulder_press": UpperBodyEvaluator("shoulder_press"),
+    "side_lateral_raise": UpperBodyEvaluator("side_lateral_raise"),
+    "dumbbell_row": UpperBodyEvaluator("dumbbell_row"),
+}
+
+# ===== 라벨 별칭(한글/대소문자/공백 호환) =====
+_ALIAS = {
+    # 하체
+    "squat": "squat",
+    "스쿼트": "squat",
+    "legraise": "leg_raise",
+    "leg_raise": "leg_raise",
+    "레그레이즈": "leg_raise",
+    "레그 레이즈": "leg_raise",
+
+    # 상체
+    "pushup": "pushup",
+    "푸쉬업": "pushup",
+    "shoulderpress": "shoulder_press",
+    "shoulder_press": "shoulder_press",
+    "숄더프레스": "shoulder_press",
+    "side_lateral_raise": "side_lateral_raise",
+    "side_lateral": "side_lateral_raise",
+    "side_lateral-raise": "side_lateral_raise",
+    "사이드레터럴레이즈": "side_lateral_raise",
+    "dumbbellrow": "dumbbell_row",
+    "dumbbell_row": "dumbbell_row",
+    "덤벨로우": "dumbbell_row",
+}
+
+# ===== 공용 팩토리 함수 =====
+def get_evaluator_by_label(label: str) -> ExerciseEvaluator | None:
+    """운동 이름(라벨)에 맞는 평가자 반환"""
     if not label:
-        return "idle"
-    l = label.strip()
-    # 외부에서 오는 혼합 케이스 정리
-    if l in ("Side_lateral_raise", "side_lateral_raise"):
-        return "side_lateral_raise"
-    if l in ("Dumbbell_Row", "dumbbell_row"):
-        return "dumbbell_row"
-    return l
+        return None
 
-def get_evaluator_by_label(label: str) -> ExerciseEvaluator:
-    """exercise_page의 meta['label']와 1:1 매핑"""
-    lab = _normalize_label(label)
-    # 🦵 Lower body
-    if label in {"squat", "leg_raise"}:
-        return LowerBodyEvaluator(label=lab)
-    # 💪 Upper body
-    if label in {"pushup", "shoulder_press", "Side_lateral_raise", "Dumbbell_Row"}:
-        return UpperBodyEvaluator(label=lab)
-    # 🧘 Core / Full body
-    if label in {"burpee"}:
-        return CoreFullEvaluator(label=lab)
-    # 기본값(idle 등)
-    return None  # idle 등은 None 반환 → ExercisePage에서 안내문 표시
+    key = label.strip().lower().replace("-", "_").replace(" ", "")
+    key = _ALIAS.get(key, key)
+    return _EVAL_SINGLETONS.get(key)
