@@ -16,6 +16,8 @@ app/data/**
 !app/data/guide_data.py
 *.log
 app/models/insightface_cache/
+.app_venv
+
 
 # IDE
 .vscode/
