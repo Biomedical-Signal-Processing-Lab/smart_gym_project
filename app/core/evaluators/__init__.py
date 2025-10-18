@@ -1,36 +1,23 @@
 # app/core/evaluators/__init__.py
-from .lower_body import LowerBodyEvaluator
-from .upper_body import UpperBodyEvaluator   # ✅ [ADD]
+from __future__ import annotations
+from typing import Optional
 from .base import EvalResult, ExerciseEvaluator
 
 __all__ = [
     "get_evaluator_by_label",
     "EvalResult",
     "ExerciseEvaluator",
-    "LowerBodyEvaluator",
-    "UpperBodyEvaluator",   # ✅ [ADD]
 ]
 
-# ===== 싱글톤 보관 (Evaluator 인스턴스 1회 생성) =====
-_EVAL_SINGLETONS = {
-    # 하체
-    "squat": LowerBodyEvaluator("squat"),
-    "leg_raise": LowerBodyEvaluator("leg_raise"),
-
-    # 상체
-    "pushup": UpperBodyEvaluator("pushup"),
-    "shoulder_press": UpperBodyEvaluator("shoulder_press"),
-    "side_lateral_raise": UpperBodyEvaluator("side_lateral_raise"),
-    "dumbbell_row": UpperBodyEvaluator("dumbbell_row"),
-}
-
-# ===== 라벨 별칭(한글/대소문자/공백 호환) =====
+# ---- 라벨 별칭(한글/대소문자/공백/대시 호환) ----
 _ALIAS = {
     # 하체
     "squat": "squat",
     "스쿼트": "squat",
     "legraise": "leg_raise",
     "leg_raise": "leg_raise",
+    "leg raise": "leg_raise",
+    "leg-raise": "leg_raise",
     "레그레이즈": "leg_raise",
     "레그 레이즈": "leg_raise",
 
@@ -47,14 +34,46 @@ _ALIAS = {
     "dumbbellrow": "dumbbell_row",
     "dumbbell_row": "dumbbell_row",
     "덤벨로우": "dumbbell_row",
+
+    # 코어
+    "burpee": "burpee",
+    "버피": "burpee",
 }
 
-# ===== 공용 팩토리 함수 =====
-def get_evaluator_by_label(label: str) -> ExerciseEvaluator | None:
-    """운동 이름(라벨)에 맞는 평가자 반환"""
+# ---- 지연 생성용 캐시 ----
+_SINGLETONS: dict[str, ExerciseEvaluator] = {}
+
+def _normalize(label: str) -> str:
+    key = label.strip().lower().replace("-", "_").replace(" ", "")
+    return _ALIAS.get(key, key)
+
+def _create_instance(key: str) -> ExerciseEvaluator:
+    # 필요한 순간에만 모듈 임포트 (순환 방지)
+    if key in ("squat", "leg_raise"):
+        from .lower_body import LowerBodyEvaluator
+        return LowerBodyEvaluator(key)
+
+    if key in ("pushup", "shoulder_press", "side_lateral_raise", "dumbbell_row"):
+        from .upper_body import UpperBodyEvaluator
+        return UpperBodyEvaluator(key)
+
+    if key == "burpee":
+        # 선택 모듈: 없으면 명확한 에러 메시지
+        try:
+            from .core_full import CoreFullEvaluator
+        except Exception as e:
+            raise ImportError(f"CoreFullEvaluator 로드 실패: {e}")
+        return CoreFullEvaluator("burpee")
+
+    raise KeyError(f"Unknown evaluator label: {key}")
+
+def get_evaluator_by_label(label: str) -> Optional[ExerciseEvaluator]:
+    """운동 라벨로 평가기 싱글톤을 반환 (지연 import/생성)."""
     if not label:
         return None
-
-    key = label.strip().lower().replace("-", "_").replace(" ", "")
-    key = _ALIAS.get(key, key)
-    return _EVAL_SINGLETONS.get(key)
+    key = _normalize(label)
+    inst = _SINGLETONS.get(key)
+    if inst is None:
+        inst = _create_instance(key)
+        _SINGLETONS[key] = inst
+    return inst

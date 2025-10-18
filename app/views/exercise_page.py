@@ -23,9 +23,11 @@ _LABEL_KO = {
     "leg_raise": "레그 레이즈",
     "pushup": "푸시업",
     "shoulder_press": "숄더 프레스",
-    "Side_lateral_raise": "사이드 레터럴 레이즈",
-    "Dumbbell_Row": "덤벨 로우",
+    "side_lateral_raise": "사레레",
+    "Bentover_Dumbbell": "덤벨 로우",
     "burpee": "버피",
+    
+    
 }
 
 class ExercisePage(PageBase):
@@ -79,6 +81,11 @@ class ExercisePage(PageBase):
         self._title_hold = {"label": None, "cnt": 0}
         self._evaluator: ExerciseEvaluator | None = None
         self._last_eval_label: str | None = None
+
+        self.sll_cnt = 0
+        self.db_cnt = 0
+
+        self.title_kor = "휴식중"
 
     def _draw_skeleton(self, frame_bgr, people, conf_thr=0.65, show_idx=False):
         EDGES = [
@@ -286,7 +293,7 @@ class ExercisePage(PageBase):
                             #print(angles)
                             self._angles_prev = angles
                             meta["_kpt"] = kpt   # ← 좌표 직접 쓰는 evaluator(버피)가 사용
-
+                            self.pose_panel.set_angles(angles)
 
                         
                 except Exception as _e:
@@ -304,7 +311,33 @@ class ExercisePage(PageBase):
 
         # --- TCN 라벨 → 한글 제목 (2프레임 홀드) ---
         raw_label = meta.get("label", None)
-        title_kor = _LABEL_KO.get(raw_label, (raw_label if raw_label else "휴식중"))
+
+        #print(f"conf 서민솔 {meta.get('score',None)}")
+        self.title_kor = _LABEL_KO.get(raw_label, (raw_label if raw_label else "휴식중"))
+        # sll_cnt = self.sll_cnt
+        # db_cnt = self.db_cnt
+        # if 0.7 < meta.get('score',None):
+        #     if raw_label == "side_lateral_raise":
+        #         sll_cnt += 1
+        #         if sll_cnt > 15:
+        #             sll_cnt = 15
+        #             self.title_kor = _LABEL_KO.get(raw_label, (raw_label if raw_label else "휴식중"))
+        #             db_cnt = 0
+        #     elif raw_label == "dumbbell_bent_over_row":
+        #         db_cnt += 1
+        #         if db_cnt > 15:
+        #             db_cnt = 16
+        #             self.title_kor = _LABEL_KO.get(raw_label, (raw_label if raw_label else "휴식중"))
+        #             sll_cnt = 0
+        #     else:
+        #         sll_cnt = 0
+        #         db_cnt = 0
+        #         self.title_kor = _LABEL_KO.get(raw_label, (raw_label if raw_label else "휴식중"))
+            
+
+        title_kor = self.title_kor
+        
+
 
         hold = self._title_hold
         if hold["label"] != title_kor:
@@ -313,7 +346,7 @@ class ExercisePage(PageBase):
         else:
             hold["cnt"] += 1
 
-        if hold["cnt"] >= 2 and title_kor != self._last_label:
+        if hold["cnt"] >= 30 and title_kor != self._last_label:
             self.card.set_title(title_kor)
             self._last_label = title_kor
 
