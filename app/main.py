@@ -1,5 +1,6 @@
 # main.py
 import sys
+import os # os 모듈 추가
 from PySide6.QtWidgets import QApplication, QMainWindow
 from PySide6.QtGui import QShortcut, QKeySequence, QFontDatabase, QFont
 from PySide6.QtCore import Qt, QLocale
@@ -13,10 +14,17 @@ from views.summary_page import SummaryPage
 from views.enroll_page import EnrollPage
 from views.info_page import InfoPage
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 def set_app_font(font_path: str, point_size: int = 12) -> bool:
     fid = QFontDatabase.addApplicationFont(font_path)
+    if fid == -1:
+        return False
+        
     fams = QFontDatabase.applicationFontFamilies(fid)
-    
+    if not fams:
+        return False
+
     app_font = QFont(fams[0])
     app_font.setPointSize(point_size)
     app_font.setHintingPreference(QFont.PreferFullHinting)
@@ -48,19 +56,19 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence(Qt.Key_F12), self).activated.connect(QApplication.instance().quit)
 
         self.resize(1280, 720)
-        self.router.navigate("start")
+        self.router.navigate("exercise")
 
     def _toggle_fullscreen(self):
         self.showNormal() if self.isFullScreen() else self.showFullScreen()
 
 
 if __name__ == "__main__":
-    # os.environ["QT_IM_MODULE"] = "qtvirtualkeyboard"
     QLocale.setDefault(QLocale(QLocale.Korean, QLocale.SouthKorea))
-
     app = QApplication(sys.argv)
-
-    font_path = "assets/fonts/GodoB.ttf"
+    font_path = os.path.join(BASE_DIR, "assets", "fonts", "GodoB.ttf")
+    
+    if not set_app_font(font_path, 15):
+        print("기본 폰트로 애플리케이션을 시작합니다.")
 
     ctx = AppContext()
     win = MainWindow(ctx)
