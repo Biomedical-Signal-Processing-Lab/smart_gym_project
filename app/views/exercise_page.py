@@ -162,10 +162,6 @@ class ExercisePage(PageBase):
         pa_h = int(pa_w * 0.88)
         self.pose_panel.setFixedSize(pa_w, pa_h)
 
-        btn_w = 200
-        btn_h = 80
-        self.actions.setFixedSize(btn_w, btn_h)
-
     def _init_per_stats(self):
         self._exercise_order = list(EXERCISE_ORDER)
         self._per_stats = {}

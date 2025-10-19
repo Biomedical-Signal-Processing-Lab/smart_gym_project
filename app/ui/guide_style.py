@@ -1,6 +1,6 @@
 from __future__ import annotations
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QWidget, QScrollArea, QFrame, QLabel, QScroller, QScrollerProperties
+from PySide6.QtWidgets import QWidget, QScrollArea, QFrame, QLabel
 
 COLOR_BG_PAGE   = "#ffffff"
 COLOR_BG_PANEL  = "#f3f9ff"
@@ -65,28 +65,6 @@ def style_scrollarea(scroll: QScrollArea) -> None:
             background: transparent;
         }}
     """)
-
-def enable_touch_scroll(scroll: QScrollArea, mouse_drag: bool = True) -> None:
-    scroll.viewport().setAttribute(Qt.WA_AcceptTouchEvents, True)
-    QScroller.grabGesture(scroll.viewport(), QScroller.TouchGesture)
-    if mouse_drag:
-        QScroller.grabGesture(scroll.viewport(), QScroller.LeftMouseButtonGesture)
-
-    scroller = QScroller.scroller(scroll.viewport())
-    props = scroller.scrollerProperties()
-
-    props.setScrollMetric(QScrollerProperties.DecelerationFactor, 0.12)
-    props.setScrollMetric(QScrollerProperties.MaximumVelocity, 0.65)
-
-    props.setScrollMetric(
-        QScrollerProperties.HorizontalOvershootPolicy,
-        QScrollerProperties.OvershootAlwaysOff
-    )
-    props.setScrollMetric(
-        QScrollerProperties.VerticalOvershootPolicy,
-        QScrollerProperties.OvershootAlwaysOff
-    )
-    scroller.setScrollerProperties(props)
 
 # 운동 리스트
 def style_exercise_card(card: QFrame) -> None:
