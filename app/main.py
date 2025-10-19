@@ -1,8 +1,8 @@
 # main.py
-import os
 import sys
+import os 
 from PySide6.QtWidgets import QApplication, QMainWindow
-from PySide6.QtGui import QShortcut, QKeySequence
+from PySide6.QtGui import QShortcut, QKeySequence, QFontDatabase, QFont
 from PySide6.QtCore import Qt, QLocale
 from core.context import AppContext
 from core.router import Router
@@ -13,6 +13,23 @@ from views.guide_page import GuidePage
 from views.summary_page import SummaryPage
 from views.enroll_page import EnrollPage
 from views.info_page import InfoPage
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+def set_app_font(font_path: str, point_size: int = 12) -> bool:
+    fid = QFontDatabase.addApplicationFont(font_path)
+    if fid == -1:
+        return False
+        
+    fams = QFontDatabase.applicationFontFamilies(fid)
+    if not fams:
+        return False
+
+    app_font = QFont(fams[0])
+    app_font.setPointSize(point_size)
+    app_font.setHintingPreference(QFont.PreferFullHinting)
+    QApplication.setFont(app_font)
+    return True
 
 class MainWindow(QMainWindow):
     def __init__(self, ctx):
@@ -30,24 +47,30 @@ class MainWindow(QMainWindow):
         self.router.register("enroll", lambda: EnrollPage())
         self.router.register("info",   lambda: InfoPage())
 
-        QShortcut(QKeySequence(Qt.Key_F11), self).activated.connect(self._toggle_fullscreen)
         QShortcut(QKeySequence(Qt.Key_F1), self).activated.connect(lambda: self.router.navigate("start"))
         QShortcut(QKeySequence(Qt.Key_F2), self).activated.connect(lambda: self.router.navigate("guide"))
         QShortcut(QKeySequence(Qt.Key_F3), self).activated.connect(lambda: self.router.navigate("exercise"))
         QShortcut(QKeySequence(Qt.Key_F4), self).activated.connect(lambda: self.router.navigate("info"))
 
-        self.resize(1280, 800)
-        self.router.navigate("start")
+        QShortcut(QKeySequence(Qt.Key_F11), self).activated.connect(self._toggle_fullscreen)
+        QShortcut(QKeySequence(Qt.Key_F12), self).activated.connect(QApplication.instance().quit)
+
+        self.resize(1280, 720)
+        self.router.navigate("exercise")
 
     def _toggle_fullscreen(self):
         self.showNormal() if self.isFullScreen() else self.showFullScreen()
 
+
 if __name__ == "__main__":
-    # os.environ["QT_IM_MODULE"] = "qtvirtualkeyboard"
     QLocale.setDefault(QLocale(QLocale.Korean, QLocale.SouthKorea))
-    
     app = QApplication(sys.argv)
+    font_path = os.path.join(BASE_DIR, "assets", "fonts", "GodoB.ttf")
+    
+    if not set_app_font(font_path, 15):
+        print("기본 폰트로 애플리케이션을 시작합니다.")
+
     ctx = AppContext()
     win = MainWindow(ctx)
-    win.show()
+    win.showFullScreen()  
     sys.exit(app.exec())

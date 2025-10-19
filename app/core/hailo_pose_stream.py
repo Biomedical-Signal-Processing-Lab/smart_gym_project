@@ -257,6 +257,9 @@ class HailoPoseStream:
             pass
 
     def _worker(self):
+        if not hasattr(self, "_label_hist"):
+            self._label_hist = []
+
         while not self._stop.is_set():
             try:
                 pkt = self._data_q.get(timeout=0.5)
@@ -277,8 +280,10 @@ class HailoPoseStream:
                         if _iou(self._prev_bbox, cur_bbox) < self.iou_reset_th:
                             self._clf.reset()
                     self._prev_bbox = cur_bbox
+
+                    # 모델 추론 주기
                     if (self._frame_i % self.stride) == 0:
-                        pred = self._clf.update([sel], (w,h))
+                        pred = self._clf.update([sel], (w, h))
                         if pred is not None:
                             cls_result = dict(pred)
                             cls_result["conf_mean"] = float(cmean)
@@ -287,8 +292,26 @@ class HailoPoseStream:
                     self._clf.reset()
                     self._prev_bbox = None
 
+            
+            if cls_result is not None and "label" in cls_result:
+                self._label_hist.append(cls_result["label"])
+
+                # 최근 8프레임만 유지
+                if len(self._label_hist) > 8:
+                    self._label_hist.pop(0)
+
+                # 다수결 라벨
+                most_common = max(set(self._label_hist), key=self._label_hist.count)
+                cls_result["label_smooth"] = most_common
+
+            else:
+                # 새 결과가 없을 경우 이전 라벨 유지
+                if hasattr(self, "_label_hist") and self._label_hist:
+                    cls_result = {"label_smooth": self._label_hist[-1]}
+
             self._frame_i += 1
-            self._push_latest(frame_rgb, people, cls_result, (w,h))
+            self._push_latest(frame_rgb, people, cls_result, (w, h))
+
 
 _stream_singleton: Optional[HailoPoseStream] = None
 

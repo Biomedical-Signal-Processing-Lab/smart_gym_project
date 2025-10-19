@@ -1,102 +1,123 @@
-# views/summary_page.py
+# views/summary_page.py (FINAL VERSION with background, 3 metric cards, integer score)
+from __future__ import annotations
+
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont, QPalette, QColor
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
-    QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QGridLayout, QScrollArea, QFrame, QSizePolicy, QSpacerItem, QGraphicsDropShadowEffect
+    QWidget, QLabel, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton,
+    QFrame, QSizePolicy
 )
 from datetime import timedelta
 from core.page_base import PageBase
+import os
 
 def pretty_hms(seconds: int) -> str:
     if seconds < 0:
         seconds = 0
-    return str(timedelta(seconds=int(seconds)))
+    h = seconds // 3600
+    m = (seconds % 3600) // 60
+    s = seconds % 60
+    if h > 0:
+        return f"{h:02d}:{m:02d}:{s:02d}"
+    return f"{m:02d}:{s:02d}"
 
-class Card(QFrame):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setObjectName("Card")
-        self.setStyleSheet("""
-            QFrame#Card {
-                background: #ffffff;
-                border-radius: 16px;
-                border: 1px solid rgba(0,0,0,0.06);
-            }
-        """)
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(24)
-        shadow.setOffset(0, 6)
-        shadow.setColor(Qt.GlobalColor.lightGray)
-        self.setGraphicsEffect(shadow)
+def score_color(score: int) -> str:
+    try:
+        s = int(score)
+    except Exception:
+        return "#777"
+    if s >= 90: return "#16a34a"
+    if s >= 80: return "#2563eb"
+    if s >= 70: return "#ea580c"
+    return "#6b7280"
 
-class MetricCard(Card):
-    def __init__(self, title: str, value: str, subtitle: str = "", parent=None):
+def asset_path(*parts) -> str:
+    """Utility to resolve asset path"""
+    here = os.path.dirname(os.path.abspath(__file__))
+    root = os.path.dirname(here)
+    return os.path.join(root, *parts)
+
+# -------------------- MetricCard --------------------
+class MetricCard(QFrame):
+    def __init__(self, title: str, value: str = "-", parent: QWidget | None = None):
         super().__init__(parent)
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(20, 16, 20, 16)
-        lay.setSpacing(6)
+        self.setObjectName("MetricCard")
+        self.setAttribute(Qt.WA_StyledBackground, True)
 
         self.title_lbl = QLabel(title)
-        self.title_lbl.setStyleSheet("color:#667085;")
-        self.title_lbl.setFont(QFont("Inter", 12, QFont.Weight.Medium))
-
+        self.title_lbl.setObjectName("MetricTitle")
         self.value_lbl = QLabel(value)
-        self.value_lbl.setStyleSheet("color:#111827;")
-        f = QFont("Inter", 28, QFont.Weight.Bold)
-        f.setLetterSpacing(QFont.SpacingType.PercentageSpacing, 103)
-        self.value_lbl.setFont(f)
+        self.value_lbl.setObjectName("MetricValue")
 
-        self.subtitle_lbl = QLabel(subtitle)
-        self.subtitle_lbl.setStyleSheet("color:#98a2b3;")
-        self.subtitle_lbl.setFont(QFont("Inter", 11))
+        row = QVBoxLayout(self)
+        row.setContentsMargins(18, 16, 18, 16)
+        row.setSpacing(4)
+        row.addWidget(self.title_lbl)
+        row.addWidget(self.value_lbl)
+        row.addStretch(1)
 
-        lay.addWidget(self.title_lbl)
-        lay.addWidget(self.value_lbl)
-        if subtitle:
-            lay.addWidget(self.subtitle_lbl)
-        lay.addStretch(1)
+    def setValue(self, text: str):
+        self.value_lbl.setText(text)
 
-    def setValue(self, value: str):
-        self.value_lbl.setText(value)
-
-class ExerciseCard(Card):
-    def __init__(self, name: str, reps: int, avg_score: float, parent=None):
+class ExerciseCard(QFrame):
+    def __init__(self, name: str = "-", reps: int = None, score: float = None, placeholder=False, parent: QWidget | None = None):
         super().__init__(parent)
-        lay = QHBoxLayout(self)
-        lay.setContentsMargins(18, 14, 18, 14)
-        lay.setSpacing(12)
+        self.setObjectName("ExerciseCard")
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.placeholder = placeholder
 
-        name_box = QVBoxLayout()
-        name_lbl = QLabel(name)
-        name_lbl.setStyleSheet("color:#1f2937;")
-        name_lbl.setFont(QFont("Inter", 18, QFont.Weight.DemiBold))
-        name_box.addWidget(name_lbl)
-        name_box.addStretch(1)
+        self.name_lbl = QLabel(name)
+        self.name_lbl.setObjectName("ExName")
 
-        grid = QGridLayout()
-        grid.setVerticalSpacing(4)
-        grid.setHorizontalSpacing(16)
+        score_display = "-" if placeholder else f"{int(round(score or 0))}점"
+        reps_display = "-" if placeholder else f"{int(reps or 0)}회"
 
-        def mk_pair(label, value):
-            l = QLabel(label)
-            l.setStyleSheet("color:#667085;")
-            l.setFont(QFont("Inter", 11))
-            v = QLabel(value)
-            v.setStyleSheet("color:#1f2937;")
-            v.setFont(QFont("Inter", 16, QFont.Weight.Bold))
-            return l, v
+        self.count_value = QLabel(reps_display)
+        self.count_value.setObjectName("ExCount")
+        self.score_value = QLabel(score_display)
+        self.score_value.setObjectName("ExScore")
 
-        l1, v1 = mk_pair("횟수", f"{reps} 회")
-        l2, v2 = mk_pair("평균 점수", f"{avg_score:.1f} 점")
+        if not placeholder:
+            self.score_value.setStyleSheet(f"color: {score_color(int(round(score or 0)))};")
+        else:
+            self.setStyleSheet("QFrame#ExerciseCard { opacity: 0.4; }")
 
-        grid.addWidget(l1, 0, 0)
-        grid.addWidget(v1, 1, 0)
-        grid.addWidget(l2, 0, 1)
-        grid.addWidget(v2, 1, 1)
+        top = QHBoxLayout()
+        top.addWidget(self.name_lbl)
+        top.addStretch(1)
 
-        lay.addLayout(name_box, 1)
-        lay.addLayout(grid, 2)
+        cnt_box = self._pill_block("횟수", self.count_value)
+        scr_box = self._pill_block("점수", self.score_value)
+
+        bottom = QHBoxLayout()
+        bottom.setSpacing(12)
+        bottom.addWidget(cnt_box)
+        bottom.addWidget(scr_box)
+        bottom.addStretch(1)
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(18, 16, 18, 16)
+        lay.setSpacing(10)
+        lay.addLayout(top)
+        lay.addLayout(bottom)
+
+    def _pill_block(self, title: str, value_label: QLabel) -> QWidget:
+        box = QFrame()
+        box.setObjectName("PillBox")
+        row = QHBoxLayout(box)
+        row.setContentsMargins(12, 8, 12, 8)
+        row.setSpacing(8)
+        t = QLabel(title)
+        t.setObjectName("PillTitle")
+        row.addWidget(t)
+        row.addWidget(value_label)
+        return box
+
+    def update_data(self, count: int, score: float):
+        if not self.placeholder:  # ignore if it's a placeholder
+            self.count_value.setText(f"{count}회")
+            self.score_value.setText(f"{score}점")
+            self.score_value.setStyleSheet(f"color: {score_color(score)};")
 
 class SummaryPage(PageBase):
     def __init__(self, parent=None):
@@ -105,91 +126,75 @@ class SummaryPage(PageBase):
         self._summary = {}
         self.ctx = None
 
-        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        pal = self.palette()
-        pal.setColor(QPalette.ColorRole.Window, QColor("#f5f7fb"))
-        self.setPalette(pal)
-        self.setAutoFillBackground(True)
+        self._bg_pix = None
+        self.bg = QLabel(self)
+        self.bg.setScaledContents(False)
+        self.bg.lower()
+        bg_path = asset_path("assets", "background", "bg_gym.jpg")
+        if os.path.exists(bg_path):
+            pm = QPixmap(bg_path)
+            if not pm.isNull():
+                self._bg_pix = pm
+                self._rescale_bg()
 
-        self.setStyleSheet(self._root_qss())
+        self.panel = QFrame(self)
+        self.panel.setObjectName("glassPanel")
+        self.panel.setAttribute(Qt.WA_StyledBackground, True)
 
-        root = QVBoxLayout(self)
-        root.setContentsMargins(28, 24, 28, 24)
-        root.setSpacing(16)
+        root = QVBoxLayout(self.panel)
+        root.setContentsMargins(28, 28, 28, 28)
+        root.setSpacing(18)
 
-        header = QLabel("오늘의 운동 결과")
-        header.setObjectName("Header")
-        header.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        root.addWidget(header)
+        top = QFrame()
+        top.setObjectName("TopBar")
+        top_lay = QHBoxLayout(top)
+        top_lay.setContentsMargins(22, 18, 22, 18)
+        top_lay.setSpacing(14)
 
-        top_row = QHBoxLayout()
-        top_row.setSpacing(16)
-        self.total_time_card = MetricCard("⏱ 총 운동시간", pretty_hms(0))
-        self.avg_score_card   = MetricCard("⭐ 평균 점수", f"{0.0:.1f} 점")
-        self.total_time_card.setMinimumHeight(110)
-        self.avg_score_card.setMinimumHeight(110)
-        top_row.addWidget(self.total_time_card, 1)
-        top_row.addWidget(self.avg_score_card, 1)
-        root.addLayout(top_row)
+        self.title = QLabel("오늘의 운동 완료!")
+        self.title.setObjectName("Title")
+        self.title.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+        top_lay.addWidget(self.title, 1)
 
-        mid_card = Card()
-        mid_lay = QVBoxLayout(mid_card)
-        mid_lay.setContentsMargins(18, 18, 18, 18)
-        mid_lay.setSpacing(12)
+        self.btn_profile = QPushButton("내 정보")
+        self.btn_profile.setObjectName("BtnUser")
+        self.btn_profile.setFixedHeight(60)
+        self.btn_profile.clicked.connect(self._on_profile)
 
-        title_row = QHBoxLayout()
-        title_lbl = QLabel("운동별 요약")
-        title_lbl.setStyleSheet("color:#111827;")
-        title_lbl.setFont(QFont("Inter", 16, QFont.Weight.DemiBold))
-        title_row.addWidget(title_lbl)
-        title_row.addStretch(1)
+        self.btn_retry = QPushButton("다시하기")
+        self.btn_retry.setObjectName("BtnStart")
+        self.btn_retry.setFixedHeight(60)
+        self.btn_retry.clicked.connect(self._on_retry)
 
-        self.up_btn = self._nav_button("▲ 위로")
-        self.down_btn = self._nav_button("▼ 아래로")
-        self.up_btn.clicked.connect(lambda: self._scroll_by(-1))
-        self.down_btn.clicked.connect(lambda: self._scroll_by(+1))
-        title_row.addWidget(self.up_btn)
-        title_row.addWidget(self.down_btn)
-        mid_lay.addLayout(title_row)
+        top_lay.addWidget(self.btn_profile)
+        top_lay.addWidget(self.btn_retry)
 
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self.scroll.viewport().setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents, True)
-        self.scroll.setStyleSheet("""
-            QScrollArea { background: transparent; border: 0; }
-            QScrollArea > QWidget { background: transparent; }
-            QScrollArea QWidget { background: transparent; }
-        """)
+        metrics_row = QHBoxLayout()
+        metrics_row.setSpacing(12)
 
-        self.list_container = QWidget()
-        self.list_container.setStyleSheet("background: transparent;")
-        self.list_lay = QVBoxLayout(self.list_container)
-        self.list_lay.setContentsMargins(6, 6, 6, 6)
-        self.list_lay.setSpacing(10)
-        self.scroll.setWidget(self.list_container)
-        mid_lay.addWidget(self.scroll)
-        root.addWidget(mid_card, 1)
+        self.total_time_card = MetricCard("총 운동 시간", "00:00")
+        self.total_reps_card = MetricCard("총 운동 횟수", "0회")
+        self.avg_score_card = MetricCard("평균 점수", "0점")  
 
-        bottom = QHBoxLayout()
-        bottom.setSpacing(14)
-        self.retry_btn   = self._cta_button("다시하기")
-        self.home_btn    = self._cta_button("메인으로")
-        self.profile_btn = self._cta_button("내정보")
-        bottom.addWidget(self.retry_btn, 1)
-        bottom.addWidget(self.home_btn, 1)
-        bottom.addWidget(self.profile_btn, 1)
-        root.addLayout(bottom)
+        for w in (self.total_time_card, self.total_reps_card, self.avg_score_card):
+            w.setMinimumHeight(90)
+            metrics_row.addWidget(w)
 
-        self.btn_restart = self.retry_btn
-        self.btn_back    = self.home_btn
+        section = QLabel("운동별 상세 결과")
+        section.setObjectName("SectionTitle")
 
-        self.home_btn.clicked.connect(self._on_home)
-        self.retry_btn.clicked.connect(self._on_retry)
-        self.profile_btn.clicked.connect(self._on_profile)
+        self.grid = QGridLayout()
+        self.grid.setHorizontalSpacing(12)
+        self.grid.setVerticalSpacing(12)
+        self.exercise_cards: list[ExerciseCard] = []
 
-    # Router hook
+        root.addWidget(top)
+        root.addLayout(metrics_row)
+        root.addWidget(section)
+        root.addLayout(self.grid)
+
+        self.setStyleSheet(self._stylesheet())
+
     def on_enter(self, ctx):
         self.ctx = ctx
 
@@ -197,10 +202,47 @@ class SummaryPage(PageBase):
         self._summary = dict(summary or {})
         self._render_with_summary()
 
-    def _on_home(self):
-        if self.ctx and hasattr(self.ctx, "goto_main"):
-            self.ctx.goto_main()
+    def _render_with_summary(self):
+        if not self._summary:
+            return
 
+        d = self._summary
+        total_seconds = d.get("duration_sec", 0)
+        per_list = d.get("exercises") or []
+
+        total_reps = sum(int(x.get("reps", 0)) for x in per_list)
+        avg_score = 0
+        if total_reps > 0:
+            w_sum = sum(int(x.get("reps", 0)) * float(x.get("avg", x.get("avg_score", 0.0))) for x in per_list)
+            avg_score = w_sum / total_reps
+
+        self.total_time_card.setValue(pretty_hms(total_seconds))
+        self.total_reps_card.setValue(f"{total_reps}회")
+        self.avg_score_card.setValue(f"{int(round(avg_score))}점") 
+
+        while self.grid.count():
+            item = self.grid.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self.exercise_cards.clear()
+
+        limited = per_list[:8]
+        while len(limited) < 8:
+            limited.append(None)
+
+        positions = [(r, c) for r in range(4) for c in range(2)]
+        for (r, c), data in zip(positions, limited):
+            if data:
+                name = data.get("name", "-")
+                reps = int(data.get("reps", 0))
+                score = float(data.get("avg", data.get("avg_score", 0.0)))
+                card = ExerciseCard(name=name, reps=reps, score=score, placeholder=False)
+            else:
+                card = ExerciseCard(name="-", reps=0, score=0, placeholder=True)
+            self.exercise_cards.append(card)
+            self.grid.addWidget(card, r, c)
+
+    # -------------------- Events --------------------
     def _on_retry(self):
         ex = (self._summary or {}).get("exercise")
         if self.ctx and hasattr(self.ctx, "restart_current_exercise"):
@@ -210,99 +252,104 @@ class SummaryPage(PageBase):
         if self.ctx and hasattr(self.ctx, "goto_profile"):
             self.ctx.goto_profile()
 
-    def _render_with_summary(self):
-        if not self._summary:
-            return
-        d = self._summary
-        total_seconds = d.get("duration_sec", 0)  
-        avg_score = d.get("avg_score", 0.0)
-        per_list = d.get("exercises") or []
+    # -------------------- Resize & Layout --------------------
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self._rescale_bg()
+        self._layout_panel()
 
-        if per_list:
-            w_sum = sum(float(x.get("avg", x.get("avg_score", 0.0))) * int(x.get("reps", 0)) for x in per_list)
-            reps   = sum(int(x.get("reps", 0)) for x in per_list)
-            avg_score = (w_sum / max(reps, 1)) if reps else 0.0
+    def _layout_panel(self):
+        w, h = self.width(), self.height()
+        target_w = max(int(w * 0.95), 1100)
+        target_h = max(int(h * 0.95), 720)
+        x = (w - target_w) // 2
+        y = (h - target_h) // 2
+        self.panel.setGeometry(x, y, target_w, target_h)
 
-        self.total_time_card.setValue(pretty_hms(total_seconds))
-        self.avg_score_card.setValue(f"{avg_score:.1f} 점")
-
-        while self.list_lay.count():
-            it = self.list_lay.takeAt(0)
-            if it.widget():
-                it.widget().deleteLater()
-
-        rows = per_list or []
-
-        for item in rows:
-            card = ExerciseCard(
-                f"🏋️ {item.get('name','운동')}",
-                int(item.get("reps", 0)),
-                float(item.get("avg", item.get("avg_score", 0.0))),
+    def _rescale_bg(self):
+        if self._bg_pix:
+            self.bg.setGeometry(self.rect())
+            scaled = self._bg_pix.scaled(
+                self.size(), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation
             )
-            card.setMinimumHeight(96)
-            self.list_lay.addWidget(card)
+            self.bg.setPixmap(scaled)
 
-        self.list_lay.addItem(QSpacerItem(20, 10, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
-
-    def _root_qss(self) -> str:
+    # -------------------- Stylesheet --------------------
+    def _stylesheet(self) -> str:
         return """
-        QWidget#SummaryPage {
-            background: #f5f7fb;
-            font-family: Inter, Pretendard, Apple SD Gothic Neo, "Noto Sans KR", Malgun Gothic, sans-serif;
-            color: #1f2937;
+        #glassPanel {
+            background: rgba(255,255,255,1);
+            border-radius: 28px;
+            border: 1px solid rgba(255,255,255,0.25);
         }
-        QLabel { background: transparent; }
-        QLabel#Header {
-            font-size: 28px; font-weight: 800; color: #111827;
-            letter-spacing: 0.5px;
+        #TopBar {
+            background: rgba(138, 43, 226, 0.8);
+            border-radius: 20px;
         }
-        QScrollBar:vertical {
-            background: #e7ecf5;
-            width: 12px; margin: 6px; border-radius: 6px;
+        #Title {
+            color: white;
+            font-size: 44px;
+            font-weight: 500;
+            letter-spacing: 1px;
         }
-        QScrollBar::handle:vertical {
-            background: #c8d1e1;
-            min-height: 30px; border-radius: 6px;
+        #BtnUser {
+            background: rgba(40, 167, 69, 1);
+            color: white;
+            border: none;
+            padding: 0 22px;
+            border-radius: 14px;
+            font-size: 24px;
+            font-weight: 600;
         }
-        QPushButton[cssClass="Nav"] {
-            background: #eef2f7;
-            border: 1px solid #d7dee9;
-            border-radius: 12px; padding: 10px 14px; color: #334155;
-            font-size: 14px; font-weight: 600;
-        }
-        QPushButton[cssClass="Nav"]:hover { background: #e6ebf3; }
-        QPushButton[cssClass="Nav"]:pressed { background: #dde4ef; }
+        #BtnUser:hover { background: rgba(50, 200, 85, 1); }
 
-        QPushButton[cssClass="CTA"] {
+        #BtnStart {
+            background: rgba(0, 123, 255, 1);
+            color: white;
+            border: none;
+            padding: 0 24px;
+            border-radius: 14px;
+            font-size: 24px;
+            font-weight: 700;
+        }
+        #BtnStart:hover { background: rgba(0, 105, 230, 1); }
+
+        #MetricCard {
             background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                stop:0 #7cc6ff, stop:1 #98a8ff);
-            border: none; border-radius: 16px;
-            padding: 18px 24px; font-size: 18px; font-weight: 800; color: white;
+                stop:0 rgba(52, 142, 219, 0.25), stop:1 rgba(52, 142, 219, 0.4));
+            border: 1px solid rgba(0,0,0,0.06);
+            border-radius: 18px;
         }
-        QPushButton#Alt[cssClass="CTA"] { background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #34d399, stop:1 #10b981); }
-        QPushButton#Danger[cssClass="CTA"] { background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #fb7185, stop:1 #f97316); }
-        QPushButton[cssClass="CTA"]:pressed { filter: brightness(0.95); }
+        #MetricTitle {
+            color: #0b3b71;
+            font-size: 30px;
+            font-weight: 500;
+        }
+        #MetricValue {
+            color: #0f172a;
+            font-size: 32px;
+            font-weight: 900;
+        }
+        #SectionTitle {
+            color: rgba(0, 123, 255, 1);
+            font-size: 60px;
+            font-weight: 500;
+            padding-left: 6px;
+        }
+        #ExerciseCard {
+            background: rgba(255,255,255,0.96);
+            border: 1px solid rgba(0,0,0,0.05);
+            border-radius: 18px;
+        }
+        #ExName { font-size: 40px; font-weight: 500; color: #111827; }
+        #ExCount { font-size: 25px; font-weight: 500; color: #0f172a; }
+        #ExScore { font-size: 25px; font-weight: 500; }
+
+        #PillBox {
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                stop:0 #eef7ff, stop:1 #e6f2ff);
+            border: 1px solid rgba(0,0,0,0.05);
+            border-radius: 14px;
+        }
+        #PillTitle { color: #475569; font-size: 25px; font-weight: 500; }
         """
-
-    def _nav_button(self, text: str) -> QPushButton:
-        b = QPushButton(text)
-        b.setProperty("cssClass", "Nav")
-        b.setCursor(Qt.CursorShape.PointingHandCursor)
-        b.setMinimumHeight(44)
-        b.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
-        b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        b.setMinimumWidth(88)
-        return b
-
-    def _cta_button(self, text: str) -> QPushButton:
-        b = QPushButton(text)
-        b.setProperty("cssClass", "CTA")
-        b.setCursor(Qt.CursorShape.PointingHandCursor)
-        b.setMinimumHeight(64)
-        b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        return b
-
-    def _scroll_by(self, pages: int):
-        bar = self.scroll.verticalScrollBar()
-        step = self.scroll.viewport().height() * 0.85
-        bar.setValue(int(bar.value() + pages * step))

@@ -1,45 +1,47 @@
-import time, cv2
+import time
+import cv2
 from PySide6.QtCore import QTimer
-from PySide6.QtGui import QColor, QImage
+from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QVBoxLayout
+from core.evaluators.pose_angles import compute_joint_angles  
+
+import numpy as np
+from core.evaluators.pose_angles import update_meta_with_angles
+
 from core.page_base import PageBase
 from core.hailo_cam_adapter import HailoCamAdapter
 
-from ui.overlay_painter import VideoCanvas, ExerciseCard, ScoreAdvicePanel, ActionButtons
+from ui.overlay_painter import PoseAnglePanel, VideoCanvas, ExerciseCard, ScoreAdvicePanel, ActionButtons
 from ui.score_painter import ScoreOverlay
 
-DEMO_EXERCISES = [
-    {"name": "스쿼트", "reps": 32, "avg": 93.2},
-    {"name": "런지", "reps": 24, "avg": 88.5},
-    {"name": "벤치프레스", "reps": 18, "avg": 91.0},
-    {"name": "데드리프트", "reps": 20, "avg": 89.1},
-    {"name": "풀업", "reps": 12, "avg": 85.7},
-    {"name": "푸시업", "reps": 40, "avg": 94.0},
-    {"name": "사이드 레이즈", "reps": 30, "avg": 90.2},
-    {"name": "숨쉬기", "reps": 35, "avg": 81.2},
-    {"name": "걷기", "reps": 45, "avg": 73.4},
-    {"name": "뛰기", "reps": 65, "avg": 66.2}
-]
+from core.evaluators import get_evaluator_by_label, EvalResult, ExerciseEvaluator
 
 _LABEL_KO = {
     None: "휴식중",
     "idle": "휴식중",
-    "plank": "플랭크",
+    "squat": "스쿼트",
+    "leg_raise": "레그 레이즈",
     "pushup": "푸시업",
     "shoulder_press": "숄더 프레스",
-    "squat": "스쿼트",
-    "Bentover_Dumbbell": "벤트 오버 덤벨",
-    "Jumping_Jacks": "점핑 잭",
-    "Side_lateral_raise": "사이드 레이즈",
+    "side_lateral_raise": "사레레",
+    "Bentover_Dumbbell": "덤벨 로우",
+    "bentover_dumbbell": "덤벨 로우",
     "burpee": "버피",
-    "leg_raise": "레그 레이즈",
+    "jumping_jack": "팔벌려 뛰기",
 }
 
-class ExercisePage(PageBase):
-    DOWN_TH    = 120.0
-    UP_TH      = 165.0
-    DEBOUNCE_N = 3
+EXERCISE_ORDER = [
+    "squat",
+    "pushup",
+    "shoulder_press",
+    "side_lateral_raise",
+    "bentover_dumbbell",
+    "leg_raise",
+    "burpee",
+    "jumping_jack",
+]
 
+class ExercisePage(PageBase):
     def __init__(self):
         super().__init__()
         self.setObjectName("ExercisePage")
@@ -47,13 +49,13 @@ class ExercisePage(PageBase):
         self.cam = None
         self.state = "UP"
         self.reps = 0
-        self._down_frame = 0
-        self._up_frame = 0
-        self._min_knee_in_phase = None
+
         self._score_sum = 0.0
-        self._score_n   = 0
+        self._score_n = 0
         self._session_started_ts = None
         self._last_label = None
+        self._exercise_order: list[str] = list(EXERCISE_ORDER)
+        self._per_stats: dict[str, dict] = {}  #
 
         self._no_person_since: float | None = None
         self.NO_PERSON_TIMEOUT_SEC = 10.0
@@ -73,6 +75,7 @@ class ExercisePage(PageBase):
         self.actions = ActionButtons()
         self.actions.endClicked.connect(self._end_clicked)
         self.actions.infoClicked.connect(self._info_clicked)
+        self.pose_panel = PoseAnglePanel()
 
         self.score_overlay = ScoreOverlay(self)
 
@@ -88,23 +91,37 @@ class ExercisePage(PageBase):
         self.timer.timeout.connect(self._tick)
         self.PAGE_FPS_MS = 33
 
-        self._title_hold = {"label": None, "cnt": 0}
+        self._evaluator: ExerciseEvaluator | None = None
+        self._last_eval_label: str | None = None
+
+        self.sll_cnt = 0
+        self.db_cnt = 0
+
+        self.title_kor = "휴식중"
+
+        # ===== 라벨 동기화(상단 디바운스) 상태 =====
+        self.LABEL_HOLD_FRAMES = 30
+        self._label_candidate: str | None = None
+        self._label_cnt: int = 0
+        self._stable_label: str = "idle"
 
     def _draw_skeleton(self, frame_bgr, people, conf_thr=0.65, show_idx=False):
-        EDGES = [(5,7),(7,9),(6,8),(8,10),(5,6),(11,12),(5,11),(6,12),
-                 (11,13),(13,15),(12,14),(14,16)]
+        EDGES = [
+            (5, 7), (7, 9), (6, 8), (8, 10), (5, 6), (11, 12), (5, 11), (6, 12),
+            (11, 13), (13, 15), (12, 14), (14, 16)
+        ]
         if not people:
             return
 
         H, W = frame_bgr.shape[:2]
-        max_len2 = (max(W, H) * 0.6) ** 2  
-        LINE_COLOR = (144, 238, 144)       
+        max_len2 = (max(W, H) * 0.6) ** 2
+        LINE_COLOR = (144, 238, 144)
 
         for p in people:
             pts = p.get("kpt", [])
             vis = [False] * len(pts)
             for j, pt in enumerate(pts):
-                if len(pt) < 3:  
+                if len(pt) < 3:
                     continue
                 if float(pt[2]) >= conf_thr:
                     vis[j] = True
@@ -114,7 +131,7 @@ class ExercisePage(PageBase):
                     x1_, y1_ = int(pts[a][0]), int(pts[a][1])
                     x2_, y2_ = int(pts[b][0]), int(pts[b][1])
                     dx, dy = x1_ - x2_, y1_ - y2_
-                    if (dx*dx + dy*dy) <= max_len2:
+                    if (dx * dx + dy * dy) <= max_len2:
                         cv2.line(frame_bgr, (x1_, y1_), (x2_, y2_), LINE_COLOR, 2)
 
     def _mount_overlays(self):
@@ -122,15 +139,44 @@ class ExercisePage(PageBase):
         self.canvas.add_overlay(self.card, anchor="top-left")
         self.canvas.add_overlay(self.panel, anchor="top-right")
         self.canvas.add_overlay(self.actions, anchor="bottom-right")
+        self.canvas.add_overlay(self.pose_panel, anchor="bottom-left")
+
         self.card.show(); self.panel.show(); self.actions.show()
         self._sync_panel_sizes()
 
     def _sync_panel_sizes(self):
         W, H = self.width(), self.height()
-        target_w = int(max(320, min(W * 0.26, 460)))
-        target_h = int(target_w * 0.90)
-        self.card.setFixedSize(target_w, target_h)
-        self.panel.setFixedSize(target_w, target_h)
+        if W <= 0 or H <= 0:
+            return
+
+        def clamp(v, lo, hi): return max(lo, min(hi, v))
+        card_w = 600
+        card_h = int(H * 0.5)
+        self.card.setFixedSize(card_w, card_h)
+
+        panel_w = 600
+        panel_h = int(H * 0.5)
+        self.panel.setFixedSize(panel_w, panel_h)
+
+        pa_w = int(clamp(W * 0.22, 260, 380))
+        pa_h = int(pa_w * 0.88)
+        self.pose_panel.setFixedSize(pa_w, pa_h)
+
+        btn_w = 200
+        btn_h = 80
+        self.actions.setFixedSize(btn_w, btn_h)
+
+    def _init_per_stats(self):
+        self._exercise_order = list(EXERCISE_ORDER)
+        self._per_stats = {}
+        for lb in self._exercise_order:
+            name_ko = _LABEL_KO.get(lb, lb)
+            self._per_stats[lb] = {
+                "name": name_ko,
+                "reps": 0,
+                "score_sum": 0.0,
+                "score_n": 0,
+            }
 
     def _goto(self, page: str):
         router = self.parent()
@@ -140,14 +186,32 @@ class ExercisePage(PageBase):
             router.navigate(page)
 
     def _build_summary(self):
-        per_list = DEMO_EXERCISES
-        w_sum = sum(float(x.get("avg", 0.0)) * int(x.get("reps", 0)) for x in per_list)
-        reps_sum = sum(int(x.get("reps", 0)) for x in per_list) or 1
-        avg_total = w_sum / reps_sum
+        per_list = []
+        for lb in self._exercise_order:
+            ps = self._per_stats.get(lb) or {}
+            reps = int(ps.get("reps", 0))
+            ssum = float(ps.get("score_sum", 0.0))
+            sn   = int(ps.get("score_n", 0))
+            avg  = (ssum / sn) if sn > 0 else 0.0
+            per_list.append({
+                "name": ps.get("name", _LABEL_KO.get(lb, lb)),
+                "reps": reps,
+                "avg": round(avg, 1),
+            })
+
+        w_sum    = sum(float(it["avg"]) * int(it["reps"]) for it in per_list)
+        reps_sum = sum(int(it["reps"]) for it in per_list)
+        avg_total = (w_sum / max(reps_sum, 1)) if reps_sum > 0 else 0.0
+
         ended_at = time.time()
         started_at = self._session_started_ts or ended_at
         duration_sec = int(max(0, ended_at - started_at))
-        return {"duration_sec": duration_sec, "avg_score": round(avg_total, 1), "exercises": per_list}
+
+        return {
+            "duration_sec": duration_sec,
+            "avg_score": round(avg_total, 1),
+            "exercises": per_list,  
+        }
 
     def _end_clicked(self):
         self._active = False
@@ -180,6 +244,10 @@ class ExercisePage(PageBase):
         self._score_sum = 0.0
         self._score_n = 0
         self._reset_state()
+        self._init_per_stats()
+
+        self._evaluator = None
+        self._last_eval_label = None
 
         self._no_person_since = None
         self._entered_at = time.time()
@@ -188,9 +256,10 @@ class ExercisePage(PageBase):
         self.card.set_title(title_text)
 
         self._mount_overlays()
+        self.pose_panel.set_angles({})
 
         try:
-            self.ctx.face.stop_stream() 
+            self.ctx.face.stop_stream()
         except Exception:
             pass
 
@@ -213,6 +282,8 @@ class ExercisePage(PageBase):
         except Exception:
             pass
         self.canvas.clear_overlays()
+        self._evaluator = None
+        self._last_eval_label = None
 
     def _tick(self):
         if not self._active or not self.timer.isActive():
@@ -252,11 +323,38 @@ class ExercisePage(PageBase):
             return
 
         frame = self.ctx.cam.frame()
+
         if frame is not None:
             try:
                 bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
                 people = self.ctx.cam.people()
                 self._draw_skeleton(bgr, people, conf_thr=0.65)
+
+                try:
+                    if people:
+                        kpt = people[0].get("kpt", [])
+                        if kpt and len(kpt) >= 17:
+                            kxy = np.array([[pt[0], pt[1]] for pt in kpt], dtype=np.float32)
+                            kcf = np.array([(pt[2] if len(pt) > 2 else 1.0) for pt in kpt], dtype=np.float32)
+
+                            # meta에 각도 자동 추가 (Elbow, Shoulder, Knee, Hip 등)
+                            angles = update_meta_with_angles(
+                                meta,
+                                kxy,
+                                kcf,
+                                conf_thr=0.5,
+                                ema=0.2,
+                                prev=getattr(self, "_angles_prev", None),
+                            )
+                            self._angles_prev = angles
+                            meta["_kpt"] = kpt   # ← 좌표 직접 쓰는 evaluator(버피)가 사용
+                            self.pose_panel.set_angles(angles)
+
+                except Exception as _e:
+                    # 각도 계산 오류 발생해도 멈추지 않게
+                    print(f"[angle_calc error] {_e}")
+                    pass
+
                 frame_rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
                 h, w, ch = frame_rgb.shape
                 qimg = QImage(frame_rgb.data, w, h, ch * w, QImage.Format_RGB888).copy()
@@ -265,120 +363,120 @@ class ExercisePage(PageBase):
             except cv2.error:
                 return
 
-        # --- TCN 라벨 → 한글 제목 (2프레임 홀드) ---
+        # =========================
+        # 라벨 정규화 + 상단 디바운스 (동기화 원천)
+        # =========================
         raw_label = meta.get("label", None)
-        title_kor = _LABEL_KO.get(raw_label, (raw_label if raw_label else "휴식중"))
+        curr = (str(raw_label).strip().lower().replace("-", "_") if raw_label else "idle")
 
-        hold = self._title_hold
-        if hold["label"] != title_kor:
-            hold["label"] = title_kor
-            hold["cnt"] = 1
+        if self._label_candidate != curr:
+            self._label_candidate = curr
+            self._label_cnt = 1
         else:
-            hold["cnt"] += 1
+            self._label_cnt += 1
 
-        if hold["cnt"] >= 2 and title_kor != self._last_label:
+        if not getattr(self, "_stable_label", None):
+            self._stable_label = curr
+
+        if self._label_cnt >= self.LABEL_HOLD_FRAMES and curr != self._stable_label:
+            self._stable_label = curr
+
+        stable = self._stable_label  
+
+        # --- 한글 타이틀 갱신(안정 라벨 기준) ---
+        title_kor = _LABEL_KO.get(stable, (stable if stable else "휴식중"))
+        if title_kor != self._last_label:
             self.card.set_title(title_kor)
             self._last_label = title_kor
 
-        self._update_from_meta(meta)
+        label = stable if stable else "idle"
 
-    # ----- 보조 로직 -----
-    def _reset_state(self):
-        self.state = "UP"
-        self.reps = 0
-        self._down_frame = 0
-        self._up_frame = 0
-        self._min_knee_in_phase = None
-        self.card.set_count(0)
-        self.panel.set_avg(0)
-        self.panel.set_advice("올바른 자세로 준비하세요.")
+        # 라벨 변경 시 evaluator 교체 + reset
+        if self._last_eval_label != label:
+            self._last_eval_label = label
+            self._evaluator = get_evaluator_by_label(label) if label not in (None, "idle") else None
+            if self._evaluator:
+                self._evaluator.reset()
 
-    def _knees_from_meta(self, m):
-        kL, kR = m.get("knee_l_deg"), m.get("knee_r_deg")
-        if kL is None or kR is None:
-            return None
-        return float(kL), float(kR)
+        # 휴식/미인식 상태면 기본 코칭만 표시
+        if label in (None, "idle") or not self._evaluator:
+            self.panel.set_advice("올바른 자세로 준비하세요.")
+            return
 
-    def _knee_color_by_angle(self, ang: float) -> QColor:
-        if ang <= 80:   return QColor(0, 128, 255)
-        if ang <= 85:   return QColor(0, 200, 0)
-        if ang <= 90:   return QColor(255, 255, 0)
-        if ang <= 95:   return QColor(255, 140, 0)
-        return QColor(255, 0, 0)
+        # evaluator로 한 프레임 평가
+        try:
+            res: EvalResult = self._evaluator.update(meta)
+        except Exception as e:
+            print(f"[Evaluator Error] {e}")
+            return
 
-    def _score_by_angle(self, ang: float) -> int:
-        a0, s0 = 75.0, 100.0
-        a1, s1 = 110.0, 0.0
-        t = max(0.0, min(1.0, (ang - a0) / (a1 - a0)))
-        return round((1.0 - t) * s0 + t * s1)
+        if not res:
+            return
 
-    def _pick_advice(self, knees_min: float | None, meta: dict) -> str:
-        if knees_min is None:
-            return "무릎이 화면에 잘 보이도록 조금 더 뒤로 물러나세요."
-        if knees_min < 80:
-            return "너무 깊습니다. 허리가 말리지 않게 80~90° 구간을 노려보세요."
-        if knees_min > 110:
-            return "조금 더 내려가 보세요. 무릎 각도 90~100°가 좋아요."
-        kl, kr = meta.get("knee_l_deg"), meta.get("knee_r_deg")
-        if isinstance(kl, (int, float)) and isinstance(kr, (int, float)) and abs(kl - kr) > 8:
-            return "좌우 무릎 각도 차이가 커요. 체중을 중앙에 실어보세요."
-        return "좋아요! 같은 리듬으로 1초에 1회 정도 유지해보세요."
+        # 코칭
+        if res.advice:
+            self.panel.set_advice(res.advice)
 
-    def _update_from_meta(self, meta: dict):
-        label = meta.get("label", None)
-        is_squat = (label == "squat")
-
-        knees = self._knees_from_meta(meta) if is_squat else None
-        is_down_now = knees and (knees[0] < self.DOWN_TH and knees[1] < self.DOWN_TH)
-        is_up_now   = knees and (knees[0] >= self.UP_TH and knees[1] >= self.UP_TH)
-
-        if is_squat and is_down_now:
-            self._down_frame += 1; self._up_frame = 0
-        elif is_squat and is_up_now:
-            self._up_frame += 1; self._down_frame = 0
-        else:
-            self._down_frame = 0; self._up_frame = 0
-
-        if is_squat and self.state == "DOWN" and knees is not None:
-            cur_min = min(knees)
-            self._min_knee_in_phase = cur_min if self._min_knee_in_phase is None else min(self._min_knee_in_phase, cur_min)
-
-        if self.state == "UP":
-            if is_squat and self._down_frame >= self.DEBOUNCE_N:
-                self.state = "DOWN"
-                self._min_knee_in_phase = None
-        else:
-            if is_squat and self._up_frame >= self.DEBOUNCE_N:
-                self.state = "UP"
-                self.reps += 1
+        # --- 누적: reps ---
+        if res.rep_inc:
+            self.reps += res.rep_inc
+            if hasattr(self.card, "set_count"):
                 self.card.set_count(self.reps)
+            elif hasattr(self.card, "set_reps"):
+                self.card.set_reps(self.reps)
 
-                ang = self._min_knee_in_phase if self._min_knee_in_phase is not None else (min(knees) if knees else 180.0)
-                color = self._knee_color_by_angle(ang)
-                score = self._score_by_angle(ang)
-                self._score_sum += float(score); self._score_n += 1
+            ps = self._per_stats.get(label)
+            if ps is not None:
+                ps["reps"] = int(ps.get("reps", 0)) + int(res.rep_inc)
 
-                avg = (self._score_sum / self._score_n) if self._score_n else 0.0
-                self.panel.set_avg(avg)
-                self.panel.set_advice(self._pick_advice(self._min_knee_in_phase, meta))
-
-                self.score_overlay.show_score(str(score), 100, text_qcolor=color)
-                self._min_knee_in_phase = None
-
-        if not is_squat:
-            if label in (None, "idle"):
-                self.panel.set_advice("올바른 자세로 준비하세요.")
-            elif label == "pushup":
-                self.panel.set_advice("푸시업이 감지됐어요. 푸시업 모드로 전환하시겠어요?")
-            elif label == "plank":
-                self.panel.set_advice("플랭크 자세 인식. 허리라인을 곧게 유지하세요.")
-            elif label == "shoulder_press":
-                self.panel.set_advice("숄더 프레스 인식. 팔꿈치를 너무 내리지 마세요.")
+        # --- 누적: score ---
+        if res.score is not None:
+            # 화면 표시
+            if res.color:
+                self.score_overlay.show_score(str(int(res.score)), 100, text_qcolor=res.color)
             else:
-                self.panel.set_advice("동작 인식 중… 카메라 정면에서 전신이 보이게 서주세요.")
+                self.score_overlay.show_score(str(int(res.score)), 100)
+
+            # 세션 전체 평균(우상단 카드) 갱신
+            self._score_sum += float(res.score)
+            self._score_n += 1
+            avg = round(self._score_sum / max(1, self._score_n), 1)
+            self.panel.set_avg(avg)
+
+            # 운동별 평균용 누적
+            ps = self._per_stats.get(label)
+            if ps is not None:
+                ps["score_sum"] = float(ps.get("score_sum", 0.0)) + float(res.score)
+                ps["score_n"]   = int(ps.get("score_n", 0)) + 1
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
         self._sync_panel_sizes()
         self.score_overlay.setGeometry(self.rect())
         self.score_overlay.raise_()
+
+    def _reset_state(self):
+        self.state = "UP"
+        self.reps = 0
+        self.card.set_count(0)
+        self.panel.set_avg(0)
+        self.panel.set_advice("올바른 자세로 준비하세요.")
+        if self._evaluator:
+            self._evaluator.reset()
+        self.pose_panel.set_angles({})
+
+    def on_pose_frame(self, kxy, kcf):
+        """
+        kxy: (17,2) numpy array (x,y)
+        kcf: (17,) numpy array (confidence)
+        네가 이미 사용중인 compute_joint_angles()로 각도 dict 생성.
+        """
+        try:
+            angles = compute_joint_angles(kxy, kcf)  # dict 형태 반환 가정
+            # 예시 keys:
+            # 'Knee(L)','Knee(R)','Hip(L)','Hip(R)','Shoulder(L)','Shoulder(R)',
+            # 'Elbow(L)','Elbow(R)','HipLine(L)','HipLine(R)'
+            self.pose_panel.set_angles(angles)
+        except Exception:
+            # 안전하게 실패 시 화면만 유지
+            pass

@@ -1,9 +1,9 @@
 # ui/overlay_painter.py
 from dataclasses import dataclass, field
 from typing import Optional
-from PySide6.QtCore import Qt, QSize, QRect, Signal, QObject
+from PySide6.QtCore import Qt, QSize, QRect, Signal, QObject, QEvent
 from PySide6.QtWidgets import QWidget, QLabel, QGridLayout, QHBoxLayout, QVBoxLayout, QPushButton
-from PySide6.QtGui import QImage, QPixmap, QPainter, QFont, QColor, QPainterPath, QPen
+from PySide6.QtGui import QImage, QPixmap
 
 class VideoCanvas(QWidget):
     _anchor_to_cell = {
@@ -116,29 +116,29 @@ class ExerciseCard(QWidget):
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setStyleSheet("""
             QWidget {
-                background: rgba(0, 0, 0, 160);
-                border-radius: 22px;
+                background: rgba(0, 0, 0, 80);
+                border-radius: 66px;
             }
             QLabel#caption {
-                color: #BFC6CF;            
-                font-size: 20px;           
-                font-weight: 600;
-                letter-spacing: 0.5px;
-                background: transparent;   
+                color: rgba(255, 255, 255, 0.9);
+                font-size: 40px;
+                font-weight: 500;
+                letter-spacing: 1.5px;
+                background: transparent;
             }
             QLabel#titleValue {
                 color: #FFFFFF;
-                font-size: 48px;           
-                font-weight: 900;
-                letter-spacing: 1px;
-                background: transparent;   
+                font-size: 150px;
+                font-weight: 700;
+                letter-spacing: 3px;
+                background: transparent;
             }
             QLabel#countValue {
                 color: #00E0FF;
-                font-size: 96px;          
-                font-weight: 900;
-                letter-spacing: 1px;
-                background: transparent;   
+                font-size: 200px;
+                font-weight: 700;
+                letter-spacing: 3px;
+                background: transparent;
             }
         """)
 
@@ -174,27 +174,26 @@ class ScoreAdvicePanel(QWidget):
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setStyleSheet("""
             QWidget {
-                background: rgba(0, 0, 0, 160);
-                border-radius: 22px;
+                background: rgba(0, 0, 0, 80);
+                border-radius: 66px;
             }
             QLabel#caption {
-                color: #BFC6CF;
-                font-size: 20px;
-                font-weight: 600;
-                letter-spacing: 0.5px;
+                color: rgba(255, 255, 255, 0.9);
+                font-size: 40px;
+                font-weight: 500;
+                letter-spacing: 1.5px;
                 background: transparent;
             }
             QLabel#score {
                 color: #FFD166;
-                font-size: 72px;
-                font-weight: 900;
+                font-size: 230px;
+                font-weight: 700;
                 background: transparent;
             }
             QLabel#advice {
                 color: #FFFFFF;
-                font-size: 22px;
-                font-weight: 600;
-                line-height: 130%;
+                font-size: 40px;
+                font-weight: 500;
                 background: transparent;
             }
         """)
@@ -214,6 +213,8 @@ class ScoreAdvicePanel(QWidget):
         lay.addWidget(self._lbl_score)
         lay.addSpacing(6)
         lay.addWidget(self._lbl_advice)
+
+        self._overlay_container = None
 
     def set_avg(self, v: float | int):
         try:
@@ -286,9 +287,123 @@ class ActionButtons(QWidget):
         self._btn_end.clicked.connect(self.endClicked.emit)
         self._btn_info.clicked.connect(self.infoClicked.emit)
 
-        self._btn_end.setMinimumHeight(40)
-        self._btn_info.setMinimumHeight(40)
+        self._btn_end.setMinimumHeight(100)
+        self._btn_info.setMinimumHeight(100)
 
     def set_enabled(self, end_enabled: bool = True, info_enabled: bool = True):
         self._btn_end.setEnabled(end_enabled)
         self._btn_info.setEnabled(info_enabled)
+
+class PoseAnglePanel(QWidget):
+    """
+    좌측 하단에 표시할 관절 각도 패널
+    - columns: [부위, L, R, Avg]
+    - keys 예시: 'Knee(L)', 'Knee(R)', 'Hip(L)', 'Hip(R)', 'Shoulder(L)', 'Shoulder(R)', 'Elbow(L)', 'Elbow(R)', 'HipLine(L)', 'HipLine(R)'
+    """
+    ROW_KEYS = [
+        ("Knee",      "Knee(L)",      "Knee(R)"),
+        ("Hip",       "Hip(L)",       "Hip(R)"),
+        ("Shoulder",  "Shoulder(L)",  "Shoulder(R)"),
+        ("Elbow",     "Elbow(L)",     "Elbow(R)"),
+        ("HipLine",   "HipLine(L)",   "HipLine(R)"),
+    ]
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setStyleSheet("""
+            QWidget {
+                background: rgba(0, 0, 0, 160);
+                border-radius: 16px;
+            }
+            QLabel#hdr {
+                color: #BFC6CF;
+                font-size: 16px;
+                font-weight: 700;
+                background: transparent;
+            }
+            QLabel#cell {
+                color: #FFFFFF;
+                font-size: 16px;
+                font-weight: 600;
+                background: transparent;
+            }
+            QLabel#cell-dim {
+                color: #BFC6CF;
+                font-size: 14px;
+                font-weight: 600;
+                background: transparent;
+            }
+            QLabel#title {
+                color: #FFFFFF;
+                font-size: 18px;
+                font-weight: 800;
+                letter-spacing: 0.5px;
+                background: transparent;
+            }
+        """)
+        wrap = QVBoxLayout(self)
+        wrap.setContentsMargins(14, 12, 14, 12)
+        wrap.setSpacing(8)
+
+        title = QLabel("Pose Angles (°)", self)
+        title.setObjectName("title")
+        wrap.addWidget(title)
+
+        grid_host = QWidget(self)
+        grid = QGridLayout(grid_host)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(6)
+
+        # headers
+        hdrs = ["Part", "L", "R", "Avg"]
+        for c, h in enumerate(hdrs):
+            lab = QLabel(h, self)
+            lab.setObjectName("hdr")
+            grid.addWidget(lab, 0, c)
+
+        # cells
+        self._cells: dict[str, QLabel] = {}
+        for r, (part, lkey, rkey) in enumerate(self.ROW_KEYS, start=1):
+            # part name
+            lab_part = QLabel(part, self)
+            lab_part.setObjectName("cell-dim")
+            grid.addWidget(lab_part, r, 0)
+
+            # L / R / Avg cells
+            for c, col in enumerate(("L", "R", "Avg"), start=1):
+                lab = QLabel("-", self)
+                lab.setObjectName("cell")
+                grid.addWidget(lab, r, c)
+                self._cells[f"{part}:{col}"] = lab
+
+        wrap.addWidget(grid_host)
+
+    @staticmethod
+    def _fmt(v: Optional[float]) -> str:
+        if v is None:
+            return "-"
+        try:
+            return f"{float(v):.1f}"
+        except Exception:
+            return "-"
+
+    def set_angles(self, angles: dict):
+        """
+        angles 예: {
+          'Knee(L)': 132.47, 'Knee(R)': 125.96,
+          'Hip(L)': 148.22, 'Hip(R)': 143.09, ...
+        }
+        """
+        for part, lkey, rkey in self.ROW_KEYS:
+            l = angles.get(lkey)
+            r = angles.get(rkey)
+            avg = None
+            if isinstance(l, (int, float)) and isinstance(r, (int, float)):
+                avg = (float(l) + float(r)) / 2.0
+
+            self._cells[f"{part}:L"].setText(self._fmt(l))
+            self._cells[f"{part}:R"].setText(self._fmt(r))
+            self._cells[f"{part}:Avg"].setText(self._fmt(avg))
+

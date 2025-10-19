@@ -1,35 +1,9 @@
 from __future__ import annotations
 import numpy as np
-import cv2
-from typing import List, Tuple, Optional
+from typing import List, Optional
 from db.models import User, FaceEmbedding
 from . import settings as S
 from .face_backends import FaceBackendBase, HailoFaceBackend
-
-_ARC_STD_5PTS = np.array([
-    [38.2946, 51.6963],
-    [73.5318, 51.5014],
-    [56.0252, 71.7366],
-    [41.5493, 92.3655],
-    [70.7299, 92.2041],
-], dtype=np.float32)
-
-def align_by_5pts(bgr: np.ndarray, kpt5: List[Tuple[int, int]], out_size: Tuple[int,int] = (112, 112)) -> np.ndarray:
-    src = np.array(kpt5, dtype=np.float32)
-    dst = _ARC_STD_5PTS.copy()
-    if out_size != (112, 112):
-        sx = out_size[0] / 112.0
-        sy = out_size[1] / 112.0
-        dst[:, 0] *= sx
-        dst[:, 1] *= sy
-    M, _ = cv2.estimateAffinePartial2D(src, dst, method=cv2.LMEDS)
-    if M is None:
-        x = int(min(p[0] for p in kpt5)); y = int(min(p[1] for p in kpt5))
-        X = int(max(p[0] for p in kpt5)); Y = int(max(p[1] for p in kpt5))
-        x = max(0, x); y = max(0, y)
-        crop = bgr[y:Y, x:X].copy() if (Y > y and X > x) else bgr
-        return cv2.resize(crop, out_size, interpolation=cv2.INTER_LINEAR)
-    return cv2.warpAffine(bgr, M, out_size, flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
 
 class FaceService:
     def __init__(self, SessionLocal, backend: FaceBackendBase | None = None):
@@ -45,8 +19,8 @@ class FaceService:
                     cropper_so=getattr(S, "CROPPER_SO", None),
                     cam=getattr(S, "CAM", None),
                     det_input_size=(S.SRC_WIDTH, S.SRC_HEIGHT),
-                    arcface_app=S.ARC_APP_NAME,
-                    arcface_input=getattr(S, "ARC_INPUT_HW", (112, 112)),
+                    face_app=S.FACE_APP_NAME,
+                    face_input=getattr(S, "FACE_INPUT_HW", (112, 112)),
                 )
             self._enabled = True
         except Exception:

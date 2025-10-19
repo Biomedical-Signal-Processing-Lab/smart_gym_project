@@ -16,6 +16,7 @@ app/data/**
 !app/data/guide_data.py
 *.log
 app/models/insightface_cache/
+start_smart_gym.sh
 
 # IDE
 .vscode/
@@ -23,4 +24,3 @@ app/models/insightface_cache/
 
 # OS
 .DS_Store
-

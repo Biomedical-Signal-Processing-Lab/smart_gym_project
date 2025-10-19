@@ -7,7 +7,6 @@ from .hailo_face_stream import HailoFaceStream
 from . import settings as S
 
 def _rec_forward_any(rec, rgb112):
-    import numpy as np
     if hasattr(rec, "get_feat"):
         feat = rec.get_feat(rgb112)
     else:
@@ -27,7 +26,7 @@ class FaceBackendBase:
         raise NotImplementedError
     def close(self) -> None: ...
 
-_ARC_STD_5PTS = np.array([
+_ALIGN_STD_5PTS = np.array([
     [38.2946, 51.6963],
     [73.5318, 51.5014],
     [56.0252, 71.7366],
@@ -37,7 +36,7 @@ _ARC_STD_5PTS = np.array([
 
 def _align_by_5pts(bgr: np.ndarray, kpt5: List[Tuple[int, int]], out_size: Tuple[int,int] = (112,112)) -> np.ndarray:
     src = np.array(kpt5, dtype=np.float32)
-    dst = _ARC_STD_5PTS.copy()
+    dst = _ALIGN_STD_5PTS.copy()
     if out_size != (112,112):
         sx = out_size[0] / 112.0
         sy = out_size[1] / 112.0
@@ -58,8 +57,8 @@ class HailoFaceBackend(FaceBackendBase):
                  cropper_so: Optional[str] = None,
                  cam: Optional[str] = None,
                  det_input_size: Tuple[int,int] = (S.SRC_WIDTH, S.SRC_HEIGHT),
-                 arcface_app: str = "buffalo_l",
-                 arcface_input: Tuple[int,int] = (112,112)):
+                 face_app: str = "buffalo_l",
+                 face_input: Tuple[int,int] = (112,112)):
 
         self.stream = HailoFaceStream(
             hef_path   = det_hef   or getattr(S, "FACE_DET_HEF", None),
@@ -71,7 +70,7 @@ class HailoFaceBackend(FaceBackendBase):
 
         from insightface.app import FaceAnalysis
         self._app = FaceAnalysis(
-            name=arcface_app,
+            name=face_app,
             root=str(S.INSIGHTFACE_HOME),
             allowed_modules=['detection', 'recognition'],
             providers=['CPUExecutionProvider']
@@ -81,11 +80,11 @@ class HailoFaceBackend(FaceBackendBase):
         self._rec = self._app.models.get('recognition', None)
         if self._rec is None:
             raise RuntimeError("Recognition model not loaded")
-        self._arc_in = arcface_input
+        self._face_in = face_input
         self._ok = True
 
         import numpy as np, cv2
-        dummy = np.zeros((self._arc_in[1], self._arc_in[0], 3), np.uint8)
+        dummy = np.zeros((self._face_in[1], self._face_in[0], 3), np.uint8)
         _ = _rec_forward_any(self._rec, cv2.cvtColor(dummy, cv2.COLOR_BGR2RGB))
 
     @property
@@ -116,7 +115,7 @@ class HailoFaceBackend(FaceBackendBase):
         if not kpt5 or len(kpt5) != 5:
             return None
 
-        aligned = _align_by_5pts(fr, kpt5, out_size=self._arc_in)
+        aligned = _align_by_5pts(fr, kpt5, out_size=self._face_in)
         rgb = cv2.cvtColor(aligned, cv2.COLOR_BGR2RGB)
         emb = _rec_forward_any(self._rec, rgb)
         return emb

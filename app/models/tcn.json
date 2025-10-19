@@ -1,8 +1,8 @@
 {
   "classes": [
-    "Bentover_Dumbbell",
-    "Jumping_Jacks",
-    "Side_lateral_raise",
+    "bentover_dumbbell",
+    "jumping_jack",
+    "side_lateral_raise",
     "burpee",
     "idle",
     "leg_raise",
