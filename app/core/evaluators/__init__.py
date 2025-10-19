@@ -49,24 +49,28 @@ def _normalize(label: str) -> str:
 
 def _create_instance(key: str) -> ExerciseEvaluator:
     # 필요한 순간에만 모듈 임포트 (순환 방지)
+
+    # 하체
     if key in ("squat", "leg_raise"):
         from .lower_body import LowerBodyEvaluator
         return LowerBodyEvaluator(key)
 
-    if key in ("pushup", "shoulder_press", "side_lateral_raise", "dumbbell_row"):
+    # 코어  ← 원래 코어가 담당하는 3개: ("burpee", "pushup", "Jumping_jack")
+    if key in ("burpee", "pushup", "jumping_jack"):
+        try:
+            from .core_full import CoreBodyEvaluator 
+        except Exception as e:
+            raise ImportError(f"CoreFullEvaluator 로드 실패: {e}")
+        # 라벨 하드코딩 금지: 그대로 전달해야 코어 내부에서 분기 가능
+        return CoreBodyEvaluator(key)
+
+    # 상체 (pushup은 코어로 이동시켰음)
+    if key in ("shoulder_press", "side_lateral_raise", "Bentover_Dumbbell", "bentover_dumbbell"):
         from .upper_body import UpperBodyEvaluator
         return UpperBodyEvaluator(key)
 
-    if key == "burpee":
-        # 선택 모듈: 없으면 명확한 에러 메시지
-        try:
-            from .core_full import CoreFullEvaluator
-        except Exception as e:
-            raise ImportError(f"CoreFullEvaluator 로드 실패: {e}")
-        return CoreFullEvaluator("burpee")
-
+    # 알 수 없는 라벨
     raise KeyError(f"Unknown evaluator label: {key}")
-
 def get_evaluator_by_label(label: str) -> Optional[ExerciseEvaluator]:
     """운동 라벨로 평가기 싱글톤을 반환 (지연 import/생성)."""
     if not label:

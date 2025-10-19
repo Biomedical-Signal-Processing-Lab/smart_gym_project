@@ -3,7 +3,7 @@ import cv2
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QVBoxLayout
-from core.evaluators.pose_angles import compute_joint_angles  
+from core.evaluators.pose_angles import compute_joint_angles  # 각도 계산 함수 (이미 네 코드에 있음)
 
 import numpy as np
 from core.evaluators.pose_angles import update_meta_with_angles
@@ -11,7 +11,7 @@ from core.evaluators.pose_angles import update_meta_with_angles
 from core.page_base import PageBase
 from core.hailo_cam_adapter import HailoCamAdapter
 
-from ui.overlay_painter import PoseAnglePanel, VideoCanvas, ExerciseCard, ScoreAdvicePanel, ActionButtons
+from ui.overlay_painter import  PoseAnglePanel, VideoCanvas, ExerciseCard, ScoreAdvicePanel, ActionButtons
 from ui.score_painter import ScoreOverlay
 
 from core.evaluators import get_evaluator_by_label, EvalResult, ExerciseEvaluator
@@ -25,21 +25,11 @@ _LABEL_KO = {
     "shoulder_press": "숄더 프레스",
     "side_lateral_raise": "사레레",
     "Bentover_Dumbbell": "덤벨 로우",
-    "bentover_dumbbell": "덤벨 로우",
     "burpee": "버피",
     "jumping_jack": "팔벌려 뛰기",
+    
+    
 }
-
-EXERCISE_ORDER = [
-    "squat",
-    "pushup",
-    "shoulder_press",
-    "side_lateral_raise",
-    "bentover_dumbbell",
-    "leg_raise",
-    "burpee",
-    "jumping_jack",
-]
 
 class ExercisePage(PageBase):
     def __init__(self):
@@ -54,8 +44,6 @@ class ExercisePage(PageBase):
         self._score_n = 0
         self._session_started_ts = None
         self._last_label = None
-        self._exercise_order: list[str] = list(EXERCISE_ORDER)
-        self._per_stats: dict[str, dict] = {}  #
 
         self._no_person_since: float | None = None
         self.NO_PERSON_TIMEOUT_SEC = 10.0
@@ -91,6 +79,7 @@ class ExercisePage(PageBase):
         self.timer.timeout.connect(self._tick)
         self.PAGE_FPS_MS = 33
 
+        self._title_hold = {"label": None, "cnt": 0}
         self._evaluator: ExerciseEvaluator | None = None
         self._last_eval_label: str | None = None
 
@@ -98,12 +87,6 @@ class ExercisePage(PageBase):
         self.db_cnt = 0
 
         self.title_kor = "휴식중"
-
-        # ===== 라벨 동기화(상단 디바운스) 상태 =====
-        self.LABEL_HOLD_FRAMES = 30
-        self._label_candidate: str | None = None
-        self._label_cnt: int = 0
-        self._stable_label: str = "idle"
 
     def _draw_skeleton(self, frame_bgr, people, conf_thr=0.65, show_idx=False):
         EDGES = [
@@ -139,44 +122,23 @@ class ExercisePage(PageBase):
         self.canvas.add_overlay(self.card, anchor="top-left")
         self.canvas.add_overlay(self.panel, anchor="top-right")
         self.canvas.add_overlay(self.actions, anchor="bottom-right")
-        self.canvas.add_overlay(self.pose_panel, anchor="bottom-left")
+        self.canvas.add_overlay(self.pose_panel, anchor="bottom-left")   # ← 추가
 
         self.card.show(); self.panel.show(); self.actions.show()
         self._sync_panel_sizes()
 
     def _sync_panel_sizes(self):
         W, H = self.width(), self.height()
-        if W <= 0 or H <= 0:
-            return
+        target_w = int(max(320, min(W * 0.26, 460)))
+        target_h = int(target_w * 0.90)
+        self.card.setFixedSize(target_w, target_h)
+        self.panel.setFixedSize(target_w, target_h)
 
-        def clamp(v, lo, hi): return max(lo, min(hi, v))
-        card_w = 600
-        card_h = int(H * 0.5)
-        self.card.setFixedSize(card_w, card_h)
-
-        panel_w = 600
-        panel_h = int(H * 0.5)
-        self.panel.setFixedSize(panel_w, panel_h)
-
-        pa_w = int(clamp(W * 0.22, 260, 380))
+        # 좌하단 각도 패널은 조금 더 작게
+        pa_w = int(max(260, min(W * 0.22, 380)))
         pa_h = int(pa_w * 0.88)
         self.pose_panel.setFixedSize(pa_w, pa_h)
 
-        btn_w = 200
-        btn_h = 80
-        self.actions.setFixedSize(btn_w, btn_h)
-
-    def _init_per_stats(self):
-        self._exercise_order = list(EXERCISE_ORDER)
-        self._per_stats = {}
-        for lb in self._exercise_order:
-            name_ko = _LABEL_KO.get(lb, lb)
-            self._per_stats[lb] = {
-                "name": name_ko,
-                "reps": 0,
-                "score_sum": 0.0,
-                "score_n": 0,
-            }
 
     def _goto(self, page: str):
         router = self.parent()
@@ -186,32 +148,14 @@ class ExercisePage(PageBase):
             router.navigate(page)
 
     def _build_summary(self):
-        per_list = []
-        for lb in self._exercise_order:
-            ps = self._per_stats.get(lb) or {}
-            reps = int(ps.get("reps", 0))
-            ssum = float(ps.get("score_sum", 0.0))
-            sn   = int(ps.get("score_n", 0))
-            avg  = (ssum / sn) if sn > 0 else 0.0
-            per_list.append({
-                "name": ps.get("name", _LABEL_KO.get(lb, lb)),
-                "reps": reps,
-                "avg": round(avg, 1),
-            })
-
-        w_sum    = sum(float(it["avg"]) * int(it["reps"]) for it in per_list)
-        reps_sum = sum(int(it["reps"]) for it in per_list)
-        avg_total = (w_sum / max(reps_sum, 1)) if reps_sum > 0 else 0.0
-
+        per_list = []  # TODO: 세션 중 실제 기록을 원하면 여기에 누적해서 넣기
+        w_sum = sum(float(x.get("avg", 0.0)) * int(x.get("reps", 0)) for x in per_list)
+        reps_sum = sum(int(x.get("reps", 0)) for x in per_list) or 1
+        avg_total = w_sum / reps_sum
         ended_at = time.time()
         started_at = self._session_started_ts or ended_at
         duration_sec = int(max(0, ended_at - started_at))
-
-        return {
-            "duration_sec": duration_sec,
-            "avg_score": round(avg_total, 1),
-            "exercises": per_list,  
-        }
+        return {"duration_sec": duration_sec, "avg_score": round(avg_total, 1), "exercises": per_list}
 
     def _end_clicked(self):
         self._active = False
@@ -244,7 +188,6 @@ class ExercisePage(PageBase):
         self._score_sum = 0.0
         self._score_n = 0
         self._reset_state()
-        self._init_per_stats()
 
         self._evaluator = None
         self._last_eval_label = None
@@ -282,6 +225,7 @@ class ExercisePage(PageBase):
         except Exception:
             pass
         self.canvas.clear_overlays()
+        # (선택) 깔끔 정리
         self._evaluator = None
         self._last_eval_label = None
 
@@ -338,6 +282,7 @@ class ExercisePage(PageBase):
                             kcf = np.array([(pt[2] if len(pt) > 2 else 1.0) for pt in kpt], dtype=np.float32)
 
                             # meta에 각도 자동 추가 (Elbow, Shoulder, Knee, Hip 등)
+
                             angles = update_meta_with_angles(
                                 meta,
                                 kxy,
@@ -346,10 +291,12 @@ class ExercisePage(PageBase):
                                 ema=0.2,
                                 prev=getattr(self, "_angles_prev", None),
                             )
+                            #print(angles)
                             self._angles_prev = angles
                             meta["_kpt"] = kpt   # ← 좌표 직접 쓰는 evaluator(버피)가 사용
                             self.pose_panel.set_angles(angles)
 
+                        
                 except Exception as _e:
                     # 각도 계산 오류 발생해도 멈추지 않게
                     print(f"[angle_calc error] {_e}")
@@ -363,38 +310,55 @@ class ExercisePage(PageBase):
             except cv2.error:
                 return
 
-        # =========================
-        # 라벨 정규화 + 상단 디바운스 (동기화 원천)
-        # =========================
+        # --- TCN 라벨 → 한글 제목 (2프레임 홀드) ---
         raw_label = meta.get("label", None)
-        curr = (str(raw_label).strip().lower().replace("-", "_") if raw_label else "idle")
 
-        if self._label_candidate != curr:
-            self._label_candidate = curr
-            self._label_cnt = 1
+        #print(f"conf 서민솔 {meta.get('score',None)}")
+        self.title_kor = _LABEL_KO.get(raw_label, (raw_label if raw_label else "휴식중"))
+        # sll_cnt = self.sll_cnt
+        # db_cnt = self.db_cnt
+        # if 0.7 < meta.get('score',None):
+        #     if raw_label == "side_lateral_raise":
+        #         sll_cnt += 1
+        #         if sll_cnt > 15:
+        #             sll_cnt = 15
+        #             self.title_kor = _LABEL_KO.get(raw_label, (raw_label if raw_label else "휴식중"))
+        #             db_cnt = 0
+        #     elif raw_label == "dumbbell_bent_over_row":
+        #         db_cnt += 1
+        #         if db_cnt > 15:
+        #             db_cnt = 16
+        #             self.title_kor = _LABEL_KO.get(raw_label, (raw_label if raw_label else "휴식중"))
+        #             sll_cnt = 0
+        #     else:
+        #         sll_cnt = 0
+        #         db_cnt = 0
+        #         self.title_kor = _LABEL_KO.get(raw_label, (raw_label if raw_label else "휴식중"))
+            
+
+        title_kor = self.title_kor
+        
+
+
+        hold = self._title_hold
+        if hold["label"] != title_kor:
+            hold["label"] = title_kor
+            hold["cnt"] = 1
         else:
-            self._label_cnt += 1
+            hold["cnt"] += 1
 
-        if not getattr(self, "_stable_label", None):
-            self._stable_label = curr
-
-        if self._label_cnt >= self.LABEL_HOLD_FRAMES and curr != self._stable_label:
-            self._stable_label = curr
-
-        stable = self._stable_label  
-
-        # --- 한글 타이틀 갱신(안정 라벨 기준) ---
-        title_kor = _LABEL_KO.get(stable, (stable if stable else "휴식중"))
-        if title_kor != self._last_label:
+        if hold["cnt"] >= 30 and title_kor != self._last_label:
             self.card.set_title(title_kor)
             self._last_label = title_kor
 
-        label = stable if stable else "idle"
+        # === evaluator 연결 (라벨 기반) ===
+        label = raw_label if raw_label else "idle"
 
         # 라벨 변경 시 evaluator 교체 + reset
         if self._last_eval_label != label:
             self._last_eval_label = label
             self._evaluator = get_evaluator_by_label(label) if label not in (None, "idle") else None
+            print(type(self._evaluator))
             if self._evaluator:
                 self._evaluator.reset()
 
@@ -407,9 +371,10 @@ class ExercisePage(PageBase):
         try:
             res: EvalResult = self._evaluator.update(meta)
         except Exception as e:
-            print(f"[Evaluator Error] {e}")
-            return
-
+                # 현장 디버깅용: 문제 생겨도 UI 멈추지 않게
+                print(f"[Evaluator Error] {e}")
+                return
+        # 결과 없으면 끝
         if not res:
             return
 
@@ -417,7 +382,7 @@ class ExercisePage(PageBase):
         if res.advice:
             self.panel.set_advice(res.advice)
 
-        # --- 누적: reps ---
+        # rep 증가
         if res.rep_inc:
             self.reps += res.rep_inc
             if hasattr(self.card, "set_count"):
@@ -425,29 +390,17 @@ class ExercisePage(PageBase):
             elif hasattr(self.card, "set_reps"):
                 self.card.set_reps(self.reps)
 
-            ps = self._per_stats.get(label)
-            if ps is not None:
-                ps["reps"] = int(ps.get("reps", 0)) + int(res.rep_inc)
-
-        # --- 누적: score ---
+        # 점수 표시 및 평균 갱신
         if res.score is not None:
-            # 화면 표시
             if res.color:
                 self.score_overlay.show_score(str(int(res.score)), 100, text_qcolor=res.color)
             else:
                 self.score_overlay.show_score(str(int(res.score)), 100)
 
-            # 세션 전체 평균(우상단 카드) 갱신
             self._score_sum += float(res.score)
             self._score_n += 1
             avg = round(self._score_sum / max(1, self._score_n), 1)
             self.panel.set_avg(avg)
-
-            # 운동별 평균용 누적
-            ps = self._per_stats.get(label)
-            if ps is not None:
-                ps["score_sum"] = float(ps.get("score_sum", 0.0)) + float(res.score)
-                ps["score_n"]   = int(ps.get("score_n", 0)) + 1
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
@@ -465,6 +418,7 @@ class ExercisePage(PageBase):
             self._evaluator.reset()
         self.pose_panel.set_angles({})
 
+
     def on_pose_frame(self, kxy, kcf):
         """
         kxy: (17,2) numpy array (x,y)
@@ -476,7 +430,10 @@ class ExercisePage(PageBase):
             # 예시 keys:
             # 'Knee(L)','Knee(R)','Hip(L)','Hip(R)','Shoulder(L)','Shoulder(R)',
             # 'Elbow(L)','Elbow(R)','HipLine(L)','HipLine(R)'
+
+            # 3) 패널 업데이트
             self.pose_panel.set_angles(angles)
-        except Exception:
+        except Exception as e:
             # 안전하게 실패 시 화면만 유지
+            # print(f"[pose] angle update error: {e}")
             pass

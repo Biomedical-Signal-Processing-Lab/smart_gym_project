@@ -88,33 +88,28 @@ class HailoCamAdapter:
             shoulders = (None, None)
             elbows = (None, None)
             hips = (None, None)
-            hiplines = (None, None)  # 옵션
+            hiplines = (None, None)
 
             if self._people:
                 p = self._people[0]
                 pts = p.get("kpt", [])
 
-                # 무릎 ∠(hip - knee - ankle)
                 l_knee = _angle(_pt(pts, L_HIP, self.conf_thr), _pt(pts, L_KNE, self.conf_thr), _pt(pts, L_ANK, self.conf_thr))
                 r_knee = _angle(_pt(pts, R_HIP, self.conf_thr), _pt(pts, R_KNE, self.conf_thr), _pt(pts, R_ANK, self.conf_thr))
                 knees = (l_knee, r_knee)
 
-                # 어깨 ∠(hip - shoulder - elbow)
                 l_sho = _angle(_pt(pts, L_HIP, self.conf_thr), _pt(pts, L_SHO, self.conf_thr), _pt(pts, L_ELB, self.conf_thr))
                 r_sho = _angle(_pt(pts, R_HIP, self.conf_thr), _pt(pts, R_SHO, self.conf_thr), _pt(pts, R_ELB, self.conf_thr))
                 shoulders = (l_sho, r_sho)
 
-                # 팔꿈치 ∠(shoulder - elbow - wrist)
                 l_elb = _angle(_pt(pts, L_SHO, self.conf_thr), _pt(pts, L_ELB, self.conf_thr), _pt(pts, L_WRI, self.conf_thr))
                 r_elb = _angle(_pt(pts, R_SHO, self.conf_thr), _pt(pts, R_ELB, self.conf_thr), _pt(pts, R_WRI, self.conf_thr))
                 elbows = (l_elb, r_elb)
 
-                # 힙 ∠(shoulder - hip - knee)
                 l_hip = _angle(_pt(pts, L_SHO, self.conf_thr), _pt(pts, L_HIP, self.conf_thr), _pt(pts, L_KNE, self.conf_thr))
                 r_hip = _angle(_pt(pts, R_SHO, self.conf_thr), _pt(pts, R_HIP, self.conf_thr), _pt(pts, R_KNE, self.conf_thr))
                 hips = (l_hip, r_hip)
 
-                # (옵션) 힙라인 ∠(shoulder_L - hip_L - hip_R), ∠(shoulder_R - hip_R - hip_L)
                 l_hl = _angle(_pt(pts, L_SHO, self.conf_thr), _pt(pts, L_HIP, self.conf_thr), _pt(pts, R_HIP, self.conf_thr))
                 r_hl = _angle(_pt(pts, R_SHO, self.conf_thr), _pt(pts, R_HIP, self.conf_thr), _pt(pts, L_HIP, self.conf_thr))
                 hiplines = (l_hl, r_hl)
@@ -123,12 +118,10 @@ class HailoCamAdapter:
                 "ok": ok,
                 "src_w": w, "src_h": h,
                 "label": label,
-                "score": score,  # 0.0~1.0
-
-                # ✅ 표준 키들
-                "knee_l_deg": knees[0],      "knee_r_deg": knees[1],
+                "score": score,
+                "knee_l_deg": knees[0], "knee_r_deg": knees[1],
                 "shoulder_l_deg": shoulders[0], "shoulder_r_deg": shoulders[1],
-                "elbow_l_deg": elbows[0],       "elbow_r_deg": elbows[1],
-                "hip_l_deg": hips[0],           "hip_r_deg": hips[1],
-                "hipline_l_deg": hiplines[0],   "hipline_r_deg": hiplines[1],  # 필요 없으면 UI에서 무시
+                "elbow_l_deg": elbows[0], "elbow_r_deg": elbows[1],
+                "hip_l_deg": hips[0], "hip_r_deg": hips[1],
+                "hipline_l_deg": hiplines[0], "hipline_r_deg": hiplines[1],
             }
