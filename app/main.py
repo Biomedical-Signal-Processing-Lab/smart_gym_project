@@ -1,6 +1,6 @@
 # main.py
 import sys
-import os # os 모듈 추가
+import os 
 from PySide6.QtWidgets import QApplication, QMainWindow
 from PySide6.QtGui import QShortcut, QKeySequence, QFontDatabase, QFont
 from PySide6.QtCore import Qt, QLocale
