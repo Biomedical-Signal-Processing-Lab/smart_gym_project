@@ -25,7 +25,6 @@ def _color(s: int) -> QColor:
 
 # 라벨 정규화 (대소문자/공백/대시/한글 대응)
 _LABEL_ALIAS = {
-    "pushup": "pushup", "푸쉬업": "pushup",
     "shoulder_press": "shoulder_press", "shoulderpress": "shoulder_press", "숄더프레스": "shoulder_press",
     "side_lateral_raise": "side_lateral_raise", "sidelateralraise": "side_lateral_raise",
     "side_lateral": "side_lateral_raise", "side_lateral-raise": "side_lateral_raise",
@@ -80,16 +79,11 @@ def _get_first(meta: Dict[str, Any], keys: List[str]) -> Optional[float]:
     return None
 
 def _avg_lr(meta: Dict[str, Any], base: str) -> Optional[float]:
-    variants = {
-        "shoulder": [["shoulder_l","Shoulder(L)"], ["shoulder_r","Shoulder(R)"]],
-        "elbow":    [["elbow_l","Elbow(L)"], ["elbow_r","Elbow(R)"]],
-        "knee":     [["knee_l","Knee(L)"], ["knee_r","Knee(R)"]],
-        "hip":      [["hip_l","Hip(L)"],   ["hip_r","Hip(R)"]],  # 상체에선 잘 안쓰지만 통일을 위해 추가
-    }
-    if base not in variants:
-        return None
-    l = _get_first(meta, variants[base][0])
-    r = _get_first(meta, variants[base][1])
+    # 표기키 + *_deg 모두 지원
+    cand_l = [f"{base}_l", f"{base}_L", f"{base}(L)", base.capitalize()+"(L)", f"{base}_l_deg"]
+    cand_r = [f"{base}_r", f"{base}_R", f"{base}(R)", base.capitalize()+"(R)", f"{base}_r_deg"]
+    l = _get_first(meta, cand_l)
+    r = _get_first(meta, cand_r)
     if l is None and r is None: return None
     if l is None: return r
     if r is None: return l
@@ -101,29 +95,20 @@ def _right_only(meta: Dict[str, Any], base: str) -> Optional[float]:
 
 # -------------------- UpperBodyEvaluator --------------------
 class UpperBodyEvaluator(ExerciseEvaluator):
-    """
-    푸쉬업 / 숄더 프레스 / 사이드 레터럴 레이즈 / 덤벨 로우
-    - 각 운동별 카운트 기준과 점수 산출 시점을 분리
-    - 카운트: 동작 한 사이클 인식
-    - 점수 : 특정 관절 조건 충족 시 스냅샷 평가
-    """
-    DEBOUNCE_N = 3
+    
+    # ----------공통 ----------
+    DEBOUNCE_N = 2
     TOL = 3.0
 
     # 각도 기준 테이블 (lower와 동일 컨벤션 허용: max/min 또는 maxv/minv)
     THRESHOLDS = {
-        "pushup": {
-            "shoulder_r": {"best": 38.0, "max": 45.0, "min": 30.0},
-            "elbow_r":    {"best": 130.0, "max": 180.0, "min": 130.0},
-            "knee_r":     {"best": 157.0, "max": 157.0, "min": 90.0},
-        },
+        
         "shoulder_press": {
-            "shoulder": {"best": 153.0, "max": 153.0, "min": 140.0},
-            "elbow":    {"best": 143.0, "max": 143.0, "min": 137.0},
+            "elbow": {"best": 100.0, "max": 160.0, "min": 80.0},
         },
         "side_lateral_raise": {
-            "shoulder": {"best": 87.0, "max": 99.5, "min": 58.0},
-            "elbow":    {"best": 176.5, "max": 180.0, "min": 130.0},
+            "shoulder": {"best":60.0, "max": 80.0, "min": 40.0},
+           # "elbow":    {"best": 176.5, "max": 180.0, "min": 130.0},
         },
         "dumbbell_row": {
             "shoulder": {"best": 30.0,  "max": 45.0, "min": 18.0},
@@ -132,266 +117,286 @@ class UpperBodyEvaluator(ExerciseEvaluator):
     }
 
     def __init__(self, label: str):
-        # mode를 먼저 세팅 (부모 __init__에서 reset() 호출 전에 준비)
+        
         norm = _normalize_label(label)
         self.mode = {"Side_lateral_raise":"side_lateral_raise",
                      "Dumbbell_Row":"dumbbell_row"}.get(label, norm)
         super().__init__()
 
     def reset(self):
-        self.state = "UP"
+        if getattr(self, "mode", None) == "shoulder_press":
+            self.state = "DOWN"
+        else:
+            self.state = "UP"
+    
         self._deb = 0
-        _dbg(f"reset() mode={getattr(self,'mode', None)}")
+        self._cooldown = 0
+        self._ema_sh = None    
+        self._ema_hl = None    
+        self._armed = False
+        self._top_el = None
 
-    # ---------- 점수 계산 유틸 (best/max/min 이름 통일 허용) ----------
-    def _score_by_angle(self, angle: Optional[float], cfg: Dict[str, float]) -> int:
-        if angle is None:
-            _dbg("  - angle=None → score=50")
-            return 50
-        b = cfg.get("best")
-        mx = cfg.get("maxv", cfg.get("max"))
-        mn = cfg.get("minv", cfg.get("min"))
-        _dbg(f"  - score_by: angle={_fmt(angle)} best={_fmt(b)} max={_fmt(mx)} min={_fmt(mn)} tol={self.TOL}")
-        if b is None or mx is None or mn is None:
-            _dbg("  - cfg invalid → score=50")
-            return 50
-        if abs(angle - b) <= self.TOL:
-            return 100
-        if mx <= angle < b:
-            return 80
-        if b < angle <= mn:
-            return 80
-        return 50
-
-    # ---------- 스냅샷 점수 ----------
+    
     def _snapshot_score(self, meta: Dict[str, Any]) -> Tuple[int, Dict[str, float], str]:
-        """현재 프레임에서 관련 관절 평균점수 계산 + meta 동기화(표기용/스네이크)"""
-        used: Dict[str, float] = {}
-        scores: List[int] = []
-        cfgs = self.THRESHOLDS[self.mode]
+            used: Dict[str, float] = {}
+            scores: List[int] = []
+            cfgs = self.THRESHOLDS[self.mode]
 
-        if self.mode == "pushup":
-            s = _right_only(meta, "shoulder")
-            e = _right_only(meta, "elbow")
-            k = _right_only(meta, "knee")
-            _put_angle(meta, "Shoulder(R)", s)
-            _put_angle(meta, "Elbow(R)", e)
-            _put_angle(meta, "Knee(R)", k)
-            if s is not None:
-                sc = self._score_by_angle(s, cfgs["shoulder_r"]); scores.append(sc); used["shoulder_r"] = s
-                _dbg(f"  - PUSHUP shoulder_r={_fmt(s)} → {sc}")
-            if e is not None:
-                sc = self._score_by_angle(e, cfgs["elbow_r"]); scores.append(sc); used["elbow_r"] = e
-                _dbg(f"  - PUSHUP elbow_r={_fmt(e)} → {sc}")
-            if k is not None:
-                sc = self._score_by_angle(k, cfgs["knee_r"]); scores.append(sc); used["knee_r"] = k
-                _dbg(f"  - PUSHUP knee_r={_fmt(k)} → {sc}")
-            advice = "팔과 몸의 각도를 일정하게 유지하세요."
+            # 운동별 로직 구분
+            if self.mode == "shoulder_press":
+                e = _avg_lr(meta, "elbow")
+                _put_angle(meta, "Elbow", e)
+                if e is not None:
+                    scores.append(self._score_shoulder_press(e, cfgs["elbow"]))  # ← 팔꿈치만
+                    used["elbow"] = e
+                advice = "팔꿈치를 끝까지 펴서 수직으로 밀어 올리세요."
 
-        elif self.mode == "shoulder_press":
-            s = _avg_lr(meta, "shoulder"); e = _avg_lr(meta, "elbow")
-            _put_angle(meta, "Shoulder", s)
-            _put_angle(meta, "Elbow", e)
-            if s is not None:
-                sc = self._score_by_angle(s, cfgs["shoulder"]); scores.append(sc); used["shoulder"] = s
-                _dbg(f"  - SP shoulder={_fmt(s)} → {sc}")
-            if e is not None:
-                sc = self._score_by_angle(e, cfgs["elbow"]); scores.append(sc); used["elbow"] = e
-                _dbg(f"  - SP elbow={_fmt(e)} → {sc}")
-            advice = "팔을 천천히 위로 올리세요."
+            elif self.mode == "side_lateral_raise":
+                s = _avg_lr(meta, "shoulder")
+                _put_angle(meta, "Shoulder", s)
+                scores.clear()  # 안전
+                if s is not None:
+                    # 어깨 각도만 중앙형(삼각형)으로 점수
+                    scores.append(self._score_side_lateral(s, cfgs["shoulder"]))
+                used = {"shoulder": s if s is not None else float("nan")}
+                advice = "팔을 몸통과 수평 근처까지만 부드럽게 들어 올리고, 내려올 때 컨트롤하세요."
 
-        elif self.mode == "side_lateral_raise":
-            s = _avg_lr(meta, "shoulder"); e = _avg_lr(meta, "elbow")
-            _put_angle(meta, "Shoulder", s)
-            _put_angle(meta, "Elbow", e)
-            if s is not None:
-                sc = self._score_by_angle(s, cfgs["shoulder"]); scores.append(sc); used["shoulder"] = s
-                _dbg(f"  - SLR shoulder={_fmt(s)} → {sc}")
-            if e is not None:
-                sc = self._score_by_angle(e, cfgs["elbow"]); scores.append(sc); used["elbow"] = e
-                _dbg(f"  - SLR elbow={_fmt(e)} → {sc}")
-            advice = "팔이 너무 높지 않게 들어주세요."
+            elif self.mode == "dumbbell_row":
+                s = _avg_lr(meta, "shoulder")
+                e = _avg_lr(meta, "elbow")
+                _put_angle(meta, "Shoulder", s)
+                _put_angle(meta, "Elbow", e)
+                if s: scores.append(self._score_dumbbell_row(s, cfgs["shoulder"]))
+                if e: scores.append(self._score_dumbbell_row(e, cfgs["elbow"]))
+                advice = "등 근육으로 팔을 당기세요."
 
-        elif self.mode == "dumbbell_row":
-            s = _avg_lr(meta, "shoulder"); e = _avg_lr(meta, "elbow")
-            _put_angle(meta, "Shoulder", s)
-            _put_angle(meta, "Elbow", e)
-            if s is not None:
-                sc = self._score_by_angle(s, cfgs["shoulder"]); scores.append(sc); used["shoulder"] = s
-                _dbg(f"  - ROW shoulder={_fmt(s)} → {sc}")
-            if e is not None:
-                sc = self._score_by_angle(e, cfgs["elbow"]); scores.append(sc); used["elbow"] = e
-                _dbg(f"  - ROW elbow={_fmt(e)} → {sc}")
-            advice = "등 근육으로 팔을 당기세요."
+            else:
+                return 50, {}, "지원되지 않는 운동입니다."
 
-        score = int(round(sum(scores) / max(1, len(scores))))
-        _dbg(f"[SNAPSHOT] mode={self.mode} score={score} used={ {k:_fmt(v) for k,v in used.items()} }")
-        return score, used, advice
+            # 평균 점수 산출
+            score = int(round(sum(scores) / max(1, len(scores))))
+            return score, used, advice
 
-    # ==================== 공개 API ====================
+
     def update(self, meta: Dict[str, Any]) -> Optional[EvalResult]:
         m = self.mode
-        _dbg(f"[UPDATE] mode={m} state={self.state} deb={self._deb}")
-        if m == "pushup":
-            return self._update_pushup(meta)
+        
         if m == "shoulder_press":
             return self._update_shoulder_press(meta)
-        if m == "side_lateral_raise":
+        if m == "side_lateral_raise":           
             return self._update_side_lateral(meta)
         if m == "dumbbell_row":
             return self._update_dumbbell_row(meta)
         return None
 
     def update_and_maybe_score(self, meta: Dict[str, Any], label: Optional[str] = None) -> Optional[EvalResult]:
-        if label:
-            self.mode = _normalize_label(label)
-        return self.update(meta)
+            if label:
+                self.mode = _normalize_label(label)
+            return self.update(meta)
 
-    # -------------------- 1. PUSH-UP --------------------
-# 전이: 어깨_r 기준 (DOWN: >= 45, UP: <= 38)  — 필요시 숫자만 조정
-# 점수: UP 복귀 순간, "오른쪽 엘보우 >= 130" 이면 스냅샷
-    def _update_pushup(self, meta: Dict[str, Any]) -> Optional[EvalResult]:
-        shoulder = _right(meta, "shoulder")   # <- _right_only 말고 _right 사용
-        elbow    = _right(meta, "elbow")
+      
 
-        _dbg(f"[PU] tick sh_r={_fmt(shoulder)} el_r={_fmt(elbow)} state={self.state} deb={self._deb}")
+    # -------------------- Shoulder Press --------------------
 
-        # 전이는 '어깨'만으로 진행 (엘보우 None이어도 카운트·상태전이 가능)
-        if shoulder is None:
-            self._deb = 0
-            _dbg("[PU] shoulder=None → skip tick (deb reset)")
-            return None
-
-        if self.state == "UP":
-            # DOWN 진입 탐지 (내려감 시작)
-            if shoulder >= 38.0:
-                self._deb += 1
-                _dbg(f"[PU] DOWN detect deb={self._deb}/{self.DEBOUNCE_N} (sh>={shoulder:.1f})")
-                if self._deb >= self.DEBOUNCE_N:
-                    self.state = "DOWN"; self._deb = 0
-                    _dbg("[PU] state→DOWN")
-            else:
-                # 조건 벗어나면 디바운스 리셋
-                if self._deb:
-                    _dbg("[PU] DOWN detect canceled → deb=0")
-                self._deb = 0
-
-        else:  # state == "DOWN"
-            # UP 복귀 탐지
-            if shoulder <= 45.0:
-                self._deb += 1
-                _dbg(f"[PU] UP detect deb={self._deb}/{self.DEBOUNCE_N} (sh<={shoulder:.1f})")
-                if self._deb >= self.DEBOUNCE_N:
-                    self.state = "UP"; self._deb = 0
-                    _dbg("[PU] state→UP (snapshot try)")
-
-                    # 스냅샷/점수: 엘보우 조건 확인
-                    if elbow is not None and elbow >= 130.0:
-                        score, used, advice = self._score_snapshot_pushup(meta)  # ← 함수명 확인!
-                        _dbg(f"[PU] RESULT: rep_inc=1 score={score} used={ {k:_fmt(v) for k,v in used.items()} }")
-                        return EvalResult(
-                            rep_inc=1,
-                            score=score,
-                            advice=advice,
-                            color=_color(score),
-                        )
-                    else:
-                        _dbg(f"[PU] snapshot skipped (elbow<130 or None): el={_fmt(elbow)}")
-                        # 엘보우 조건 미충족이면 '카운트는 하지 않음' — 필요 시 정책 변경 가능
-            else:
-                if self._deb:
-                    _dbg("[PU] UP detect canceled → deb=0")
-                self._deb = 0
-
-        return None
-
-    # -------------------- 2. SHOULDER PRESS --------------------
-    # 카운트: 팔이 올라갔다 내려올 때
-    # 점수: 팔이 위로 최대치(>=150)일 때
     def _update_shoulder_press(self, meta: Dict[str, Any]) -> Optional[EvalResult]:
-        shoulder = _avg_lr(meta, "shoulder")
-        _dbg(f"[SP] tick shoulder_avg={_fmt(shoulder)} state={self.state} deb={self._deb}")
-        if shoulder is None:
+       
+        
+        cfg = self.THRESHOLDS["shoulder_press"]["elbow"]
+        el_min, el_best = float(cfg["min"]), float(cfg["best"])   
+     
+        EL_UP_TH   = 125                      
+        EL_DOWN_TH = 110
+        DEB_N      = 2               
+        COOLDOWN_N = 6
+
+        
+        el = _avg_lr(meta, "elbow")
+        if el is None:
+            self._deb = 0
+            return None
+        _put_angle(meta, "Elbow", el)
+        if el is None:
+            self._deb = 0
             return None
 
+        # ---- 쿨다운 ----
+        if not hasattr(self, "_cooldown"): self._cooldown = 0
+        if self._cooldown > 0: self._cooldown -= 1
+
+        
+        def bump(cond: bool):
+            if cond:
+                self._deb = min(self._deb + 1, DEB_N)
+            else:
+               
+                self._deb = max(self._deb - 1, 0)
+
         if self.state == "DOWN":
-            if shoulder >= 43:
-                self._deb += 1
-                _dbg(f"[SP] up_detect {self._deb}/{self.DEBOUNCE_N}")
-                if self._deb >= self.DEBOUNCE_N:
-                    self.state = "UP"; self._deb = 0
-                    score, used, advice = self._snapshot_score(meta)
-                    _dbg(f"[SP] RESULT rep_inc=1 score={score}")
-                    return EvalResult(
-                        rep_inc=1,
-                        score=score,
-                        advice=advice,
-                        color=_color(score),
-                    )
-        else:  # UP
-            if shoulder <= 150:
-                self._deb += 1
-                _dbg(f"[SP] down_detect {self._deb}/{self.DEBOUNCE_N}")
-                if self._deb >= self.DEBOUNCE_N:
-                    self.state = "DOWN"; self._deb = 0
-                    _dbg("[SP] state→DOWN")
+            bump(el >= EL_UP_TH)
+            if self._deb >= DEB_N and self._cooldown == 0:
+                self.state = "UP"
+                self._deb = 0
+                
+                self._top_el = el
+                
+        else:  # state == "UP"
+           
+            if el is not None:
+                self._top_el = max(self._top_el or el, el)
+
+            bump(el <= EL_DOWN_TH)
+            if self._deb >= DEB_N:
+                self.state = "DOWN"
+                self._deb = 0
+                self._cooldown = COOLDOWN_N
+
+              
+                meta2 = dict(meta)
+                if getattr(self, "_top_el", None) is not None:
+                    meta2["elbow_l_deg"] = meta2["elbow_r_deg"] = float(self._top_el)
+
+                score, used, advice = self._snapshot_score(meta2)
+                self._top_el = None  
+
+                return EvalResult(
+                    rep_inc=1,
+                    score=score,
+                    advice=advice,
+                    color=_color(score),
+                )
+
         return None
 
-    # -------------------- 3. SIDE LATERAL RAISE --------------------
-    # 카운트: 팔이 올라갔다 내려올 때
-    # 점수: 어깨가 43 이하일 때(내려오면서)
+    
+    def _score_shoulder_press(self, angle: Optional[float], cfg: Dict[str, float]) -> int:
+     
+        if angle is None:
+            return 0
+        
+        best = cfg.get("best", 100.0)
+        mn = cfg.get("min", best - 20.0)
+        mx = cfg.get("max", best + 20.0)
+        
+       
+        if angle <= mn or angle >= mx:
+            return 0
+        
+       
+        span = (mx - mn) / 2.0
+        dist = abs(angle - best)
+        score = 100 * (1 - dist / span)
+        
+        return max(0, min(100, int(round(score))))
+    
+    # -------------------- side_lateral--------------------
+
     def _update_side_lateral(self, meta: Dict[str, Any]) -> Optional[EvalResult]:
-        shoulder = _avg_lr(meta, "shoulder")
-        _dbg(f"[SLR] tick shoulder_avg={_fmt(shoulder)} state={self.state} deb={self._deb}")
-        if shoulder is None:
-            return None
+        
+        SH_UP_TH   = 80.0   # 팔 올림 인식
+        SH_DOWN_TH = 60.0   # 팔 내림 인식
+        DEB_N      = self.DEBOUNCE_N
+        COOLDOWN_N = 4
 
+        s = _avg_lr(meta, "shoulder")
+    
+        if s is None:
+            self._deb = 0
+            return None
+        _put_angle(meta, "Shoulder", s)
+
+        if not hasattr(self, "_cooldown"): self._cooldown = 0
+        if self._cooldown > 0: self._cooldown -= 1
+
+        # 끈적 디바운스(옵션): 조건 만족 시 +1, 불만족 시 0으로 리셋 (심플 버전)
         if self.state == "DOWN":
-            if shoulder >= 85:
+            if s >= SH_UP_TH:
                 self._deb += 1
-                _dbg(f"[SLR] up_detect {self._deb}/{self.DEBOUNCE_N}")
-                if self._deb >= self.DEBOUNCE_N:
-                    self.state = "UP"; self._deb = 0
-                    _dbg("[SLR] state→UP")
-        else:  # UP
-            if shoulder <= 43:
+                if self._deb >= DEB_N and self._cooldown == 0:
+                    self.state = "UP"
+                    self._deb = 0
+            else:
+                self._deb = 0
+        else:  # state == "UP"
+            if s <= SH_DOWN_TH:
                 self._deb += 1
-                _dbg(f"[SLR] down_detect {self._deb}/{self.DEBOUNCE_N}")
-                if self._deb >= self.DEBOUNCE_N:
-                    self.state = "DOWN"; self._deb = 0
-                    score, used, advice = self._snapshot_score(meta)
-                    _dbg(f"[SLR] RESULT rep_inc=1 score={score}")
+                if self._deb >= DEB_N:
+                    self.state = "DOWN"
+                    self._deb = 0
+                    self._cooldown = COOLDOWN_N
+
+                    # ↓ 지금 내려온 '현재 어깨 각도'로 점수 계산 (중앙형)
+                    meta2 = dict(meta)
+                    meta2["shoulder_l_deg"] = meta2["shoulder_r_deg"] = float(s)
+
+                    score, used, advice = self._snapshot_score(meta2)
                     return EvalResult(
                         rep_inc=1,
                         score=score,
                         advice=advice,
                         color=_color(score),
                     )
+            else:
+                self._deb = 0
+
         return None
+
+    def _score_side_lateral(self, angle: Optional[float], cfg: Dict[str, float]) -> int:
+        
+        if angle is None:
+            return 0
+        
+        best = cfg.get("best", 60.0)
+        mn = cfg.get("min", best - 20.0)
+        mx = cfg.get("max", best + 20.0)
+        
+        # 범위 밖이면 0점
+        if angle <= mn or angle >= mx:
+            return 0
+        
+        # 중앙형(삼각형) 스코어 계산
+        span = (mx - mn) / 2.0
+        dist = abs(angle - best)
+        score = 100 * (1 - dist / span)
+        
+        return max(0, min(100, int(round(score))))
+    
+
 
     # -------------------- 4. DUMBBELL ROW --------------------
-    # 카운트: 팔이 당겨졌다가(≤125) 다시 펴질 때(≥150)
-    # 점수: 팔 펴지며 복귀 시점
+
     def _update_dumbbell_row(self, meta: Dict[str, Any]) -> Optional[EvalResult]:
         elbow = _avg_lr(meta, "elbow")
-        _dbg(f"[ROW] tick elbow_avg={_fmt(elbow)} state={self.state} deb={self._deb}")
         if elbow is None: self._deb = 0; return None
 
-        if self.state == "UP":                     # 팔 펴진 상태 → 당기면 DOWN
+        if self.state == "UP":                    
             if elbow <= 145.0:
-                self._deb += 1; _dbg(f"[ROW] to DOWN {self._deb}/{self.DEBOUNCE_N}")
+                self._deb += 1; 
                 if self._deb >= self.DEBOUNCE_N:
-                    self.state = "DOWN"; self._deb = 0; _dbg("[ROW] state→DOWN")
+                    self.state = "DOWN"; self._deb = 0; 
             else:
                 self._deb = 0
-        else:                                      # 수축 → 펴지면 스냅샷
+        else:                                     
             if elbow >= 165.0:
-                self._deb += 1; _dbg(f"[ROW] to UP(snap) {self._deb}/{self.DEBOUNCE_N}")
+                self._deb += 1
                 if self._deb >= self.DEBOUNCE_N:
                     self.state = "UP"; self._deb = 0
                     score, used, advice = self._snapshot_score(meta)
-                    _dbg(f"[ROW] RESULT rep_inc=1 score={score}")
                     return EvalResult(rep_inc=1, score=score, advice=advice, color=_color(score))
             else:
                 self._deb = 0
         return None
+
+
+    def _score_dumbbell_row(self, angle: Optional[float], cfg: Dict[str, float]) -> int:
+        """덤벨로우: 팔꿈치 145~165° 구간 유지 시 높은 점수 (plateau형)"""
+        if angle is None:
+            return 50
+        mn, mx = cfg["min"], cfg["max"]
+        if angle < mn:
+            return 0
+        if mn <= angle <= mx:
+            # plateau zone (165 근처면 최고점)
+            return int(80 + 20 * (angle - mn) / (mx - mn))
+        return 100 if angle > mx else 0
+
+   

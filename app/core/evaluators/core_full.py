@@ -1,206 +1,350 @@
-# app/core/evaluators/core_full.py
 from __future__ import annotations
-from typing import Dict, Any, Optional, Deque, Tuple
-from collections import deque
+from typing import Dict, Any, Optional, Tuple, List
 import math
-
+from PySide6.QtGui import QColor
 from .base import ExerciseEvaluator, EvalResult
+import math
+# ===== Debug helpers =====
+DEBUG_LOWER = False  # 필요 시 False로 끄기
 
-class CoreFullEvaluator(ExerciseEvaluator):
+def _dbg(*args):
+    if DEBUG_LOWER:
+        print("[EVAL:lower]", *args)
+
+def _fmt(v):
+    if v is None: return "None"
+    try:
+        return f"{float(v):.2f}"
+    except Exception:
+        return str(v)
+
+# -------- 공통 유틸 --------
+def _avg_lr(meta: Dict[str, Any], base: str) -> Optional[float]:
+    l = meta.get(f"{base}_l_deg"); r = meta.get(f"{base}_r_deg")
+    if l is None and r is None: return None
+    if l is None: return float(r)
+    if r is None: return float(l)
+    return (float(l) + float(r)) / 2.0
+
+
+# -------- 파라미터(표 기준) --------
+class CoreBodyEvaluator(ExerciseEvaluator):
     """
-    버피(좌표 기반) 평가기
-    - 숫자 새는 기준: 팔을 높이 들었을 때(손이 눈높이 위로 올라갔다가 다시 내려왔을 때 1회)
-    - 점수 시점: 위 조건이 성립하는 순간에 '점프 높이'로 점수 산출
-    - 추가 조건: 어깨 각도 ≥ 110° 이면서, 최근 프레임에서 '감소 → 증가' (turning point) 패턴
+    ONLY: squat / leg_raise
+    - 스쿼트: 카운트=무릎 DOWN→UP, 점수=힙+무릎 각도 평균(UP 복귀 스냅샷)
+    - 레그 레이즈: 카운트=어깨 UP→(다시)DOWN, 점수=힙 각도(어깨 ≤ 43° 스냅샷)
     """
 
-    # ---- 튜닝 파라미터 (현장에 맞게 조정) ----
-    EMA_BASELINE = 0.10          # 발목 바닥 기준선 EMA
-    SHOULDER_MIN_DEG = 110.0     # 어깨 각도 최소
-    EYE_FALLBACK_OFFSET = -30.0   # 눈 좌표가 없을 때 어깨 y + 오프셋(픽셀, y가 작을수록 위)
-    DERIV_WIN = 5                # 어깨 각도 추세 판단용 윈도 길이(프레임)
-
-    # 점프 높이 점수화 (신장 정규화 비율 = (발목_baseline_y - 발목_min_y)/body_scale)
-    # body_scale: (힙-발목) 세로거리 평균
-    JUMP_THRESHOLDS = {
-        "best": 0.18,   # ≥ best  -> 100
-        "max":  0.12,   # [max, best) -> 80
-        "min":  0.05,   # [min, max)  -> 80
-        #  그 외 -> 50
-    }
-
-    def __init__(self, label: str = "burpee"):
-        super().__init__()
+    def __init__(self, label: str = "pushup"):
+        assert label in ("burpee", "pushup", "jumping_jack")
         self.mode = label
-        self.reset()
+        super().__init__()
+        self.complit = False
+        self.do = False
+
+        # pushup 상태
+        self._pu_state = "UP"      # "UP" 또는 "DOWN"
+        self._pu_min_elbow = None  # 한 rep 동안 가장 작은 팔꿈치각
+        self._pu_min_knee  = None  # 한 rep 동안 가장 작은 무릎각(굽힌 순간)
 
     def reset(self) -> None:
-        self.state = "READY"          # READY -> ARMS_UP -> READY
+        # 공통 상태
+        self.prev_label = getattr(self, "mode", None)
+
+        # 디바운스/상태
+        self.state = "UP"        # 필요 없으면 삭제해도 됨 (호환용)
         self._deb = 0
-        self._shoulder_hist: Deque[float] = deque(maxlen=self.DERIV_WIN)
-        self._ankle_baseline_y: Optional[float] = None   # 바닥 기준선(크게 변동 X)
-        self._min_ankle_y_during_up: Optional[float] = None
 
-    # ------------- 좌표 헬퍼 -------------
-    def _get_kpt(self, meta: Dict[str, Any]) -> Optional[list]:
-        # ExercisePage에서 meta["_kpt"]에 kpt를 넣어주게 패치 필요(아래 2번 참고)
-        return meta.get("_kpt")
+        # pushup용 상태
+        self._pu_state = "UP"
+        self._pu_min_elbow = None
+        self._pu_min_knee  = None
 
-    def _xy(self, kpt, idx) -> Optional[Tuple[float,float]]:
-        if not kpt or idx >= len(kpt): return None
-        p = kpt[idx]
-        if p is None or len(p) < 2: return None
-        return float(p[0]), float(p[1])
+        _dbg(f"reset() mode={getattr(self,'mode', None)}")
+    # ---------- 공개 API ----------
 
-    # MediaPipe/BlazePose 인덱스(33 기준) - 프로젝트 인덱스 다르면 여기만 수정
-    LM = dict(
-        L_WRIST=15, R_WRIST=16,  # wrist
-        L_EYE=2,   R_EYE=5,      # eye (없으면 nose/shoulder fallback)
-        NOSE=0,
-        L_SHOULDER=11, R_SHOULDER=12,
-        L_HIP=23,  R_HIP=24,
-        L_ANKLE=27, R_ANKLE=28,
-        L_KNEE=25,  R_KNEE=26,
-    )
 
-    def _eye_level_y(self, kpt, meta) -> Optional[float]:
-        # 눈 y (없으면 코 → 어깨 평균 + 오프셋)
-        for key in ("L_EYE","R_EYE","NOSE"):
-            idx = self.LM.get(key)
-            if idx is not None:
-                xy = self._xy(kpt, idx)
-                if xy: return xy[1]
-        # fallback: 어깨 평균 + 오프셋(픽셀)
-        lsh = self._xy(kpt, self.LM["L_SHOULDER"])
-        rsh = self._xy(kpt, self.LM["R_SHOULDER"])
-        if lsh and rsh:
-            return (lsh[1] + rsh[1]) / 2.0 + self.EYE_FALLBACK_OFFSET
-        return None
-
-    def _hands_y(self, kpt) -> Optional[float]:
-        lw = self._xy(kpt, self.LM["L_WRIST"]); rw = self._xy(kpt, self.LM["R_WRIST"])
-        if lw and rw:
-            return min(lw[1], rw[1])  # y가 작을수록 화면상 더 위
-        return lw[1] if lw else (rw[1] if rw else None)
-
-    def _shoulder_avg_deg(self, meta) -> Optional[float]:
-        # angles는 pose_angles.update_meta_with_angles에서 채워짐
-        sL = meta.get("Shoulder(L)"); sR = meta.get("Shoulder(R)")
-        if sL is None and sR is None: return None
-        if sL is None: return float(sR)
-        if sR is None: return float(sL)
-        return float((sL + sR) / 2.0)
-
-    def _ankle_avg_y(self, kpt) -> Optional[float]:
-        la = self._xy(kpt, self.LM["L_ANKLE"]); ra = self._xy(kpt, self.LM["R_ANKLE"])
-        if la and ra: return (la[1] + ra[1]) / 2.0
-        return la[1] if la else (ra[1] if ra else None)
-
-    def _body_scale(self, kpt) -> Optional[float]:
-        # 힙-발목 세로거리 평균을 스케일로 사용 (픽셀)
-        lh = self._xy(kpt, self.LM["L_HIP"]); la = self._xy(kpt, self.LM["L_ANKLE"])
-        rh = self._xy(kpt, self.LM["R_HIP"]); ra = self._xy(kpt, self.LM["R_ANKLE"])
-        vals = []
-        if lh and la: vals.append(abs(la[1] - lh[1]))
-        if rh and ra: vals.append(abs(ra[1] - rh[1]))
-        if not vals: return None
-        return float(sum(vals) / len(vals))
-
-    def _shoulder_turning_up(self) -> bool:
-        """
-        최근 shoulder 히스토리에서 '감소 -> 증가' (U자 반전) 패턴인지 확인
-        """
-        h = list(self._shoulder_hist)
-        if len(h) < max(3, self.DERIV_WIN // 2):
-            return False
-        # 간단한 로컬 최소 검출: h[k-1] > h[k] < h[k+1]
-        k = len(h) - 2
-        return h[k-1] > h[k] < h[k+1]
-
-    # ------------- 점수화 -------------
-    def _score_by_jump(self, jump_ratio: float) -> int:
-        th = self.JUMP_THRESHOLDS
-        if jump_ratio >= th["best"]: return 100
-        if jump_ratio >= th["max"]:  return 80
-        if jump_ratio >= th["min"]:  return 80
-        return 50
-
-    # ------------- 메인 업데이트 -------------
-     # ✅ ExercisePage 표준 엔트리
     def update(self, meta: Dict[str, Any]) -> Optional[EvalResult]:
-        if self.mode != "burpee":
+
+        # 외부 meta['label']로 필터링하지 말 것
+        self.prev_label = getattr(self, "mode", None)
+        m = self.mode  # "burpee" | "pushup" | "Jumping_jack"
+
+        if m == "burpee":
+            res = self._update_burpee(meta)
+            return res if res is not None else EvalResult()
+
+        if m == "pushup":
+            res = self._update_pushup(meta)
+            return res if res is not None else EvalResult()
+
+        if m == "jumping_jack":  # 네가 쓰는 케이스 그대로 유지
+            res = self._update_Jumping_jack(meta)
+            return res if res is not None else EvalResult()
+
+        # 알 수 없는 모드일 때 빈 결과
+        return EvalResult()
+
+
+        # label = meta.get("label")
+        
+        # _dbg(
+        #         f"knee(L/R)={_fmt(meta.get('knee_l_deg'))}/{_fmt(meta.get('knee_r_deg'))}, "
+        #         f"hip(L/R)={_fmt(meta.get('hip_l_deg'))}/{_fmt(meta.get('hip_r_deg'))}, "
+        #         f"shoulder(L/R)={_fmt(meta.get('shoulder_l_deg'))}/{_fmt(meta.get('shoulder_r_deg'))}, "
+        #         f"elbow(L/R)={_fmt(meta.get('elbow_l_deg'))}/{_fmt(meta.get('elbow_r_deg'))}, "
+        #         f"hipline(L/R)={_fmt(meta.get('hipline_l_deg'))}/{_fmt(meta.get('hipline_r_deg'))}"
+        #     )
+        
+        # self.prev_label = label
+
+        # if self.mode == "burpee" and label != "burpee":
+        #     return None
+        # if self.mode == "pushup" and label != "pushup":
+        #     return None
+        # if self.mode == "Jumping_jack" and label != "Jumping_jack":
+        #     return None
+        
+
+
+        
+
+        # if self.mode == "burpee":
+        #     return self._update_burpee(meta)
+        
+        # if self.mode == "pushup":
+        #     return self._update_pushup(meta)
+        # else:
+        #     return self._update_Jumping_jack(meta)
+        
+
+    # ---------- burpee ----------
+    def _update_burpee(self, meta: Dict[str, Any]) -> Optional[EvalResult]:
+        # ---- 오른쪽 어깨각만 사용 ----
+        s = meta.get("shoulder_r_deg")
+        try:
+            s = float(s)
+        except Exception:
+            self.prev_label = "burpee"; return None
+        if not math.isfinite(s):
+            self.prev_label = "burpee"; return None
+
+        # ---- 문턱(덜 보수적) ----
+        DOWN_ENTER = 110.0   # <= 이하면 Down 인정 (프라이밍)
+        UP_ENTER   = 110.0   # >= 이면 Up 인정 (카운트 트리거)
+
+        # ---- 상태: Down을 먼저 지나야 Up에서 카운트 ----
+        state  = getattr(self, "_bp_state", "EXPECT_DOWN")  # "EXPECT_DOWN" or "EXPECT_UP"
+        prev_s = getattr(self, "_bp_prev_s", s)
+
+        # 1) Down 프라이밍(한 번 내려가야 함)
+        if state == "EXPECT_DOWN":
+            if (prev_s > DOWN_ENTER) and (s <= DOWN_ENTER):
+                state = "EXPECT_UP"
+            self._bp_state = state
+            self._bp_prev_s = s
+            self.prev_label = "burpee"
             return None
-        return self._update_burpee(meta)
-    
 
-    def _update_burpee(self, meta: Dict[str, Any], label) -> Optional[EvalResult]:
-        if label:
-            self.mode = label
-        if self.mode != "burpee":
-            return None
+        # 2) Up에서 카운트 (Down을 거쳤을 때만)
+        #    엣지: prev_s < UP_ENTER <= s
+        if (prev_s < UP_ENTER) and (s >= UP_ENTER):
+            # 카운트 즉시 + 상태 리암
+            self._bp_state = "EXPECT_DOWN"
+            self._bp_prev_s = s
+            self.prev_label = "burpee"
+            return EvalResult(
+                rep_inc=1,
+                score=100,                 # 간단히 고정 점수
+                advice="굿.",
+                color=self._color_by_score(100),
+                title="버피",
+            )
 
-        kpt = self._get_kpt(meta)
-        if not kpt: 
-            return None
-
-        # 좌표 기반 측정
-        hand_y = self._hands_y(kpt)
-        eye_y  = self._eye_level_y(kpt, meta)
-        sh_deg = self._shoulder_avg_deg(meta)
-        if hand_y is None or eye_y is None or sh_deg is None:
-            return None
-
-        # 어깨 각도 이력(추세 체크)
-        self._shoulder_hist.append(sh_deg)
-
-        # 발목 기준선(바닥) 업데이트 (READY 상태에서만 EMA)
-        ankle_y = self._ankle_avg_y(kpt)
-        if ankle_y is not None:
-            if self._ankle_baseline_y is None:
-                self._ankle_baseline_y = ankle_y
-            elif self.state == "READY":
-                a = self.EMA_BASELINE
-                self._ankle_baseline_y = (1 - a) * self._ankle_baseline_y + a * ankle_y
-
-        # ---- 상태머신 ----
-        # y는 아래로 증가하므로, "손이 눈보다 위" == hand_y < eye_y
-        hands_above_eye = (hand_y < eye_y)
-        shoulder_ok = (sh_deg >= self.SHOULDER_MIN_DEG)
-
-        if self.state == "READY":
-            # 팔을 높이 든 상태에 진입
-            if hands_above_eye and shoulder_ok:
-                if self._shoulder_turning_up():     # 감소→증가 패턴
-                    self.state = "ARMS_UP"
-                    self._min_ankle_y_during_up = ankle_y  # 점프 최고점 탐지용 초기화
-        elif self.state == "ARMS_UP":
-            # 최고점 추적(작을수록 위쪽)
-            if ankle_y is not None:
-                if self._min_ankle_y_during_up is None:
-                    self._min_ankle_y_during_up = ankle_y
-                else:
-                    self._min_ankle_y_during_up = min(self._min_ankle_y_during_up, ankle_y)
-
-            # 손이 눈높이 아래로 떨어지면 1회 완료 + 점수
-            if not hands_above_eye:
-                self.state = "READY"
-                # 점수 산출: 점프 높이
-                score = None
-                advice = "팔을 높이 들고 점프 높이를 늘려보세요."
-                if self._ankle_baseline_y is not None and self._min_ankle_y_during_up is not None:
-                    body_scale = self._body_scale(kpt)
-                    if body_scale and body_scale > 1e-6:
-                        # baseline_y가 더 큼(아래), min_y가 더 작음(위)
-                        jump_pix = self._ankle_baseline_y - self._min_ankle_y_during_up
-                        jump_ratio = max(0.0, jump_pix / body_scale)
-                        score = self._score_by_jump(jump_ratio)
-                        advice = f"추정 점프: {jump_ratio*100:.1f}% 신장"
-
-                # 기본값(점프 추정 실패 시)
-                if score is None:
-                    score = 50
-
-                # 1회 카운트 + 점수 반환
-                return EvalResult(reps_delta=1, score=int(score), advice=advice)
-
+        # 유지
+        self._bp_state = state
+        self._bp_prev_s = s
+        self.prev_label = "burpee"
         return None
+
+
+    
+    # ---------- pushup ----------
+# 상단 import
+
+
+   # 상단 import
+    
+    def _update_pushup(self, meta: Dict[str, Any]) -> Optional[EvalResult]:
+
+        # return EvalResult(
+        #     rep_inc=1,
+        #     score=100,
+        #     advice="너무 못한다ㅋ",
+        #     color=self._color_by_score(100),   # ← base의 공통 함수 사용
+        # )
+        #오른쪽 값만 사용
+        e = meta.get("elbow_r_deg")   # 필수
+        k = meta.get("knee_r_deg")    # 선택
+ 
+        # --- 안전화 ---
+        try:
+            e = float(e)
+        except Exception:
+            self.prev_label = "pushup"; return None
+        if not math.isfinite(e):
+            self.prev_label = "pushup"; return None
+        if k is not None:
+            try: k = float(k)
+            except Exception: k = None
+
+        # 기준선(히스테리시스)  ← 조정 포인트
+        DOWN_ENTER    = 120.0   # ↓ 이하면 DOWN 진입
+        SCORE_TRIGGER = 135.0   # ↑ 이상이면 UP 복귀 + 점수 확정 (기존 130.0 → 135.0 권장)
+
+        # --- 상태머신 ---
+        if self._pu_state == "UP":
+            # 디바운스: 경계 근처 노이즈 방지
+            if e <= DOWN_ENTER:
+                self._deb = getattr(self, "_deb", 0) + 1
+                if self._deb >= 3:                    # DEBOUNCE_N=3
+                    self._pu_state = "DOWN"
+                    self._pu_min_elbow = e
+                    self._pu_min_knee  = k
+                    self._deb = 0
+            else:
+                self._deb = 0
+
+            self.prev_label = "pushup"
+            return None
+
+        # state == "DOWN": 한 rep 동안 최소값 갱신
+        if e < self._pu_min_elbow:
+            self._pu_min_elbow = e
+        if k is not None:
+            if (self._pu_min_knee is None) or (k < self._pu_min_knee):
+                self._pu_min_knee = k
+
+        # UP 복귀 → rep 인정 + 점수 산정
+        if e >= SCORE_TRIGGER:
+            self._deb = getattr(self, "_deb", 0) + 1
+            if self._deb < 3:
+                self.prev_label = "pushup"
+                return None
+            self._deb = 0
+
+            em = self._pu_min_elbow
+            km = self._pu_min_knee
+
+            # 팔꿈치 점수: 64.3 → 100, 133.5 → 0 (작을수록 좋음)
+            if em < 90.3:  em = 90.3
+            if em > 133.5: em = 133.5
+            elbow_s = (133.5 - em) / (133.5 - 90.3) * 100.0
+
+            # 무릎 점수: 90 → 0, 157 → 100 (클수록 좋음)
+            if km is not None:
+                if km < 90:  km = 90#90.0
+                if km > 157.0: km = 157.0
+                knee_s = (km - 90.0) / (157.0 - 90.0) * 100.0
+            else:
+                knee_s = None
+
+            # 가중합 (팔 70%, 무릎 30%)
+            if knee_s is None:
+                final_score = int(round(elbow_s))
+            else:
+                final_score = int(round(0.7 * elbow_s + 0.3 * knee_s))
+
+            # 스코어 클램프
+            final_score = 0 if final_score < 0 else (100 if final_score > 100 else final_score)
+
+            # 피드백
+            tips = []
+            if elbow_s < 60: tips.append("팔꿈치 더 접어.")
+            if (knee_s is not None) and (knee_s < 80): tips.append("무릎 더 펴.")
+            advice = " / ".join(tips) if tips else "굿."
+
+            # 다음 rep 준비
+            self._pu_state = "UP"
+            self._pu_min_elbow = None
+            self._pu_min_knee  = None
+
+            return EvalResult(
+                rep_inc=1,
+                score=final_score,
+                advice=advice,
+                color=self._color_by_score(final_score),   # ← base의 공통 함수 사용
+            )
+
+        self.prev_label = "pushup"
+        return None
+
+
+    # ---------- jumping jack ----------
+        # ---------- jumping jack ----------
+    def _update_Jumping_jack(self, meta: Dict[str, Any]) -> Optional[EvalResult]:
+        # --- 각도 가져오기 ---
+        s = meta.get("shoulder_avg_deg")
+        if s is None:
+            s = _avg_lr(meta, "shoulder")
+        try:
+            s = float(s)
+        except Exception:
+            self.prev_label = "jumping_jack"; return None
+        if not math.isfinite(s):
+            self.prev_label = "jumping_jack"; return None
+
+        # --- 문턱(필요하면 숫자만 바꿔) ---
+        OPEN_ENTER  = 90.0   # 이 이상이면 OPEN
+        CLOSE_ENTER = 90.0   # 이 이하면 CLOSE
+
+        # --- 상태 ---
+        state   = getattr(self, "_jj_state", "CLOSE")   # "CLOSE" / "OPEN"
+        cycles  = getattr(self, "_jj_cycles", 0)        # CLOSE 복귀 횟수
+        prev_s  = getattr(self, "_jj_prev_s", s)        # 직전 각도
+
+        if state == "CLOSE":
+            # 위 문턱 '지나가는 순간'에만 OPEN (멈춤 필요 없음)
+            if (prev_s < OPEN_ENTER) and (s >= OPEN_ENTER):
+                state = "OPEN"
+            self._jj_state = state
+            self._jj_cycles = cycles
+            self._jj_prev_s = s
+            self.prev_label = "jumping_jack"
+            return None
+
+        # state == "OPEN"
+        # 아래 문턱 '지나가는 순간'에만 CLOSE
+        if (prev_s > CLOSE_ENTER) and (s <= CLOSE_ENTER):
+            state = "CLOSE"
+            cycles += 1
+            self._jj_state = state
+            self._jj_cycles = cycles
+            self._jj_prev_s = s
+            self.prev_label = "jumping_jack"
+
+            # 두 번에 한 번만 rep +1
+            if (cycles % 2) == 0:
+                return EvalResult(
+                    rep_inc=1,
+                    score=100,
+                    advice="굿.",
+                    color=self._color_by_score(100),
+                    title="점핑 잭",
+                )
+            return None
+
+        # 전이 없음 → 값만 저장
+        self._jj_state = state
+        self._jj_cycles = cycles
+        self._jj_prev_s = s
+        self.prev_label = "jumping_jack"
+        return None
+
+
+
+def _color(s: int) -> QColor:
+    if s is None: return QColor(200, 200, 200)
+    if s >= 95:  return QColor(0, 200, 0)
+    if s >= 80:  return QColor(255, 215, 0)
+    return QColor(255, 80, 80)
