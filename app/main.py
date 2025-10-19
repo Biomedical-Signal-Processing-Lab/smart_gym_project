@@ -56,7 +56,7 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence(Qt.Key_F12), self).activated.connect(QApplication.instance().quit)
 
         self.resize(1280, 720)
-        self.router.navigate("guide")
+        self.router.navigate("start")
 
     def _toggle_fullscreen(self):
         self.showNormal() if self.isFullScreen() else self.showFullScreen()
