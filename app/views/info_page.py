@@ -8,7 +8,7 @@ from db.models import User, WorkoutSession, SessionExercise
 
 from PySide6.QtWidgets import (
     QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QMessageBox,
-    QGridLayout, QFrame, QProgressBar, QSizePolicy, QScrollArea
+    QGridLayout, QFrame, QProgressBar, QSizePolicy, QScrollArea, QStackedLayout, QButtonGroup
 )
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QFont, QPalette, QColor, QPainter, QBrush
@@ -54,6 +54,164 @@ class _NoMouseViewBox(pg.ViewBox):
     def mouseDragEvent(self, ev):    ev.ignore()
     def wheelEvent(self, ev):        ev.ignore()
     def contextMenuEvent(self, ev):  ev.ignore()
+
+class _HBar(QFrame):
+    """제목 + 우측 퍼센트 값 + 가로 ProgressBar"""
+    def __init__(self, title: str, color="#1976d2", parent=None):
+        super().__init__(parent)
+        self.setObjectName("_HBar")
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(4)
+
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(6)
+        self.title = QLabel(title)
+        self.title.setProperty("cls", "muted")
+        self.value = QLabel("0%")
+        self.value.setProperty("cls", "title")
+        row.addWidget(self.title)
+        row.addStretch(1)
+        row.addWidget(self.value)
+        lay.addLayout(row)
+
+        self.bar = QProgressBar()
+        self.bar.setRange(0, 100)
+        self.bar.setValue(0)
+        self.bar.setTextVisible(False)
+        # 색상 스타일
+        self.bar.setStyleSheet(f"""
+            QProgressBar {{
+                background: #e8eef7; border: 0; border-radius: 8px; height: 14px;
+            }}
+            QProgressBar::chunk {{
+                background: {color}; border-radius: 8px;
+            }}
+        """)
+        lay.addWidget(self.bar)
+
+    def set_percent(self, p: int):
+        p = max(0, min(100, int(p)))
+        self.value.setText(f"{p}%")
+        self.bar.setValue(p)
+
+
+class _AnalysisPanel(QFrame):
+    """
+    분석 탭 내용:
+      - 오늘 스쿼트: 횟수, 평균 점수
+      - 불균형(왼/오): 퍼센트 바 2개
+      - 템포(내림/올림): 퍼센트 바 2개
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("AnalysisPanel")
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(6, 6, 6, 6)
+        lay.setSpacing(10)
+
+        # 상단 KPI 두 개 (오늘 스쿼트)
+        kpi_row = QHBoxLayout()
+        kpi_row.setSpacing(18)
+
+        self.kpi_squat = QFrame()
+        ks = QVBoxLayout(self.kpi_squat)
+        ks.setContentsMargins(14, 12, 14, 12)
+        ks.setSpacing(2)
+        ttl1 = QLabel("오늘 스쿼트")
+        ttl1.setProperty("cls", "muted")
+        self.lbl_squat_cnt = QLabel("0회")
+        self.lbl_squat_cnt.setProperty("cls", "kpi")
+        ks.addWidget(ttl1)
+        ks.addWidget(self.lbl_squat_cnt)
+
+        self.kpi_avg = QFrame()
+        ka = QVBoxLayout(self.kpi_avg)
+        ka.setContentsMargins(14, 12, 14, 12)
+        ka.setSpacing(2)
+        ttl2 = QLabel("평균 점수")
+        ttl2.setProperty("cls", "muted")
+        self.lbl_avg_score = QLabel("0점")
+        self.lbl_avg_score.setProperty("cls", "kpi")
+        ka.addWidget(ttl2)
+        ka.addWidget(self.lbl_avg_score)
+
+        kpi_row.addWidget(self.kpi_squat, 1)
+        kpi_row.addWidget(self.kpi_avg, 1)
+        lay.addLayout(kpi_row)
+
+        # 불균형
+        cap1 = QLabel("왼/오른쪽 다리 불균형")
+        cap1.setProperty("cls", "title")
+        lay.addWidget(cap1)
+
+        self.bar_left  = _HBar("왼쪽",  "#0ea5e9")  # 푸른계열
+        self.bar_right = _HBar("오른쪽", "#34d399") # 초록계열
+        lay.addWidget(self.bar_left)
+        lay.addWidget(self.bar_right)
+
+        # 템포
+        cap2 = QLabel("템포 비율")
+        cap2.setProperty("cls", "title")
+        lay.addWidget(cap2)
+
+        self.bar_down = _HBar("내림", "#6366f1")   # 보라
+        self.bar_up   = _HBar("올림", "#f59e0b")   # 주황
+        lay.addWidget(self.bar_down)
+        lay.addWidget(self.bar_up)
+        lay.addStretch(1)
+
+        # 약간의 카드형 배경
+        self.setStyleSheet("""
+            QFrame#AnalysisPanel {
+                background: #ffffff;
+                border: 1px solid rgba(0,0,0,0.06);
+                border-radius: 12px;
+            }
+            QLabel[cls="kpi"] {
+                font-size: 32px;
+                font-weight: 900;
+                color: #0f172a;
+            }
+            QLabel[cls="muted"] {
+                color: #6b7280;
+                font-size: 18px;
+                font-weight: 600;
+            }
+            QLabel[cls="title"] {
+                color: #0b3b71;
+                font-size: 22px;
+                font-weight: 700;
+                margin-top: 4px;
+            }
+        """)
+
+    def set_data(self, data: dict):
+        """
+        data = {
+          "today":   {"squat_reps": int, "squat_avg": float},
+          "imb":     {"left": int, "right": int},   
+          "tempo":   {"down": int, "up": int}       
+        }
+        """
+        today = (data or {}).get("today", {})
+        self.lbl_squat_cnt.setText(f"{int(today.get('squat_reps', 0))}회")
+        self.lbl_avg_score.setText(f"{int(round(float(today.get('squat_avg', 0))))}점")
+
+        imb = (data or {}).get("imb", {})
+        l = int(imb.get("left", 50)); r = int(imb.get("right", 50))
+        s = max(1, l + r)
+        l = round(l * 100 / s); r = 100 - l
+        self.bar_left.set_percent(l)
+        self.bar_right.set_percent(r)
+
+        tempo = (data or {}).get("tempo", {})
+        d = int(tempo.get("down", 50)); u = int(tempo.get("up", 50))
+        s2 = max(1, d + u)
+        d = round(d * 100 / s2); u = 100 - d
+        self.bar_down.set_percent(d)
+        self.bar_up.set_percent(u)
 
 class InfoPage(PageBase):
     BASE_COLORS = [
@@ -242,6 +400,26 @@ class InfoPage(PageBase):
 
         # 하단 차트 카드
         self.chart_card = Card()
+        self.chart_card.setStyleSheet("""
+            QPushButton#TabBtn {
+                background: #1976d2;
+                color: white;
+                border: none;
+                padding: 8px 14px;
+                border-radius: 10px;
+                font-size: 18px;
+                font-weight: 700;
+            }
+            QPushButton#TabBtn:hover { background: #1565c0; }
+            QPushButton#TabBtn[active="true"] { background: #0d47a1; }
+
+            QFrame#ChartBlank {
+                background: #ffffff;
+                border: 1px dashed rgba(0,0,0,0.06);
+                border-radius: 8px;
+                min-height: 260px;  /* 카드 높이 유지용, 필요시 조정 */
+            }
+        """)
         cc = QVBoxLayout(self.chart_card)
         cc.setContentsMargins(16, 14, 16, 12)
         cc.setSpacing(6)
@@ -254,7 +432,31 @@ class InfoPage(PageBase):
         title_row.addWidget(icon)
         title_row.addWidget(t)
         title_row.addStretch(1)
+
+        # 탭 버튼 (요약/분석)
+        self.chart_tab_summary = QPushButton("요약")
+        self.chart_tab_summary.setObjectName("TabBtn")
+        self.chart_tab_summary.setCheckable(True)
+
+        self.chart_tab_analysis = QPushButton("분석")
+        self.chart_tab_analysis.setObjectName("TabBtn")
+        self.chart_tab_analysis.setCheckable(True)
+
+        self.chart_tab_group = QButtonGroup(self)
+        self.chart_tab_group.setExclusive(True)
+        self.chart_tab_group.addButton(self.chart_tab_summary)
+        self.chart_tab_group.addButton(self.chart_tab_analysis)
+
+        self.chart_tab_summary.setChecked(True)
+        self.chart_tab_summary.toggled.connect(self._on_chart_tab_changed)
+        self.chart_tab_analysis.toggled.connect(self._on_chart_tab_changed)
+
+        title_row.addWidget(self.chart_tab_summary)
+        title_row.addWidget(self.chart_tab_analysis)
+
         cc.addLayout(title_row)
+
+        self.chart_stack = QStackedLayout()
 
         self.vb = _NoMouseViewBox()
         self.plot = pg.PlotWidget(viewBox=self.vb, background="#ffffff")
@@ -274,16 +476,35 @@ class InfoPage(PageBase):
         self.plot.getAxis('bottom').setStyle(tickFont=tick_font)
         self.plot.getAxis('left').setStyle(tickFont=tick_font)
 
-        cc.addWidget(self.plot, 1)
+        summary_wrap = QFrame()
+        _sw_lay = QVBoxLayout(summary_wrap)
+        _sw_lay.setContentsMargins(0, 0, 0, 0)
+        _sw_lay.setSpacing(0)
+        _sw_lay.addWidget(self.plot, 1)
+
+        self.chart_blank = QFrame()
+        self.chart_blank.setObjectName("ChartBlank")
+        _bk_lay = QVBoxLayout(self.chart_blank)
+        _bk_lay.setContentsMargins(0, 0, 0, 0)
+        _bk_lay.setSpacing(0)
+
+        self.analysis_panel = _AnalysisPanel()
+        _bk_lay.addWidget(self.analysis_panel)
+
+        self.chart_stack.addWidget(summary_wrap)   
+        self.chart_stack.addWidget(self.chart_blank)  
+        self.chart_stack.setCurrentIndex(0)
+
+        cc.addLayout(self.chart_stack)
 
         grid.addWidget(self.chart_card, 1, 1, 1, 3)
         root.addLayout(grid)
 
-        # 시그널
         self.btn_back.clicked.connect(lambda: self._goto("guide"))
         self.btn_logout.clicked.connect(self._logout)
         self.btn_left.clicked.connect(lambda: self._scroll_stats(-1))
         self.btn_right.clicked.connect(lambda: self._scroll_stats(+1))
+        self._apply_chart_tab_style()
 
     def on_enter(self, ctx):
         self.ctx = ctx
@@ -355,7 +576,6 @@ class InfoPage(PageBase):
                 week_total = sum(sum(by_day[d].values()) for d in days)
                 self.lbl_week_total.setText(f"총 운동 횟수  {week_total:,}회")
 
-                # 전체 운동별 통계 (실제 존재하는 운동만 카드로)
                 stats = (
                     s.query(
                         SessionExercise.exercise_name.label("ex"),
@@ -371,6 +591,31 @@ class InfoPage(PageBase):
 
                 self._ensure_colors(list(stat_map.keys()))
                 self._rebuild_stat_cards(stat_map)
+
+                date_expr = func.date(WorkoutSession.started_at)
+                today_str = str(today)
+                row_today = (
+                    s.query(
+                        func.sum(SessionExercise.reps).label("cnt"),
+                        func.avg(SessionExercise.avg_score).label("avg"),
+                    )
+                    .join(WorkoutSession, SessionExercise.session_id == WorkoutSession.id)
+                    .filter(WorkoutSession.user_id == user.id)
+                    .filter(SessionExercise.exercise_name == "squat")
+                    .filter(date_expr == today_str)
+                    .one()
+                )
+                today_cnt = int(row_today[0] or 0)
+                today_avg = float(row_today[1] or 0.0)
+
+                analysis_data = {
+                    "today": {"squat_reps": today_cnt, "squat_avg": today_avg},
+                    "imb":   {"left": 54, "right": 46},     
+                    "tempo": {"down": 58, "up": 42},         
+                }
+                if hasattr(self, "analysis_panel") and self.analysis_panel:
+                    self.analysis_panel.set_data(analysis_data)
+
                 self._render_line_chart(days, by_day)
 
         except Exception:
@@ -431,6 +676,17 @@ class InfoPage(PageBase):
         step = int(self.scroll.viewport().width() * 0.8)
         bar.setValue(max(0, bar.value() + (step * direction)))
 
+    def _on_chart_tab_changed(self, _checked: bool):
+        is_summary = self.chart_tab_summary.isChecked()
+        self.chart_stack.setCurrentIndex(0 if is_summary else 1)
+        self._apply_chart_tab_style()
+
+    def _apply_chart_tab_style(self):
+        for btn in (self.chart_tab_summary, self.chart_tab_analysis):
+            btn.setProperty("active", btn.isChecked())
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
+
     def _render_line_chart(self, days, by_day):
         self.plot.clear()
 
@@ -442,7 +698,6 @@ class InfoPage(PageBase):
         xlabels = [d[5:] for d in days]  # MM-DD
         self.plot.getAxis('bottom').setTicks([list(zip(xs, xlabels))])
 
-        # 실제 데이터에 존재하는 운동만 시리즈로
         exercises = sorted({ex for d in days for ex in by_day[d].keys()})
         if not exercises:
             vb = self.plot.getViewBox()
