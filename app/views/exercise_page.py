@@ -1,7 +1,7 @@
 import time
 import cv2
 from PySide6.QtCore import QTimer
-from PySide6.QtGui import QImage
+from PySide6.QtGui import QImage, QColor
 from PySide6.QtWidgets import QVBoxLayout
 from core.evaluators.pose_angles import compute_joint_angles  
 
@@ -55,7 +55,7 @@ class ExercisePage(PageBase):
         self._session_started_ts = None
         self._last_label = None
         self._exercise_order: list[str] = list(EXERCISE_ORDER)
-        self._per_stats: dict[str, dict] = {}  #
+        self._per_stats: dict[str, dict] = {}  
 
         self._no_person_since: float | None = None
         self.NO_PERSON_TIMEOUT_SEC = 10.0
@@ -161,10 +161,6 @@ class ExercisePage(PageBase):
         pa_w = int(clamp(W * 0.22, 260, 380))
         pa_h = int(pa_w * 0.88)
         self.pose_panel.setFixedSize(pa_w, pa_h)
-
-        btn_w = 200
-        btn_h = 80
-        self.actions.setFixedSize(btn_w, btn_h)
 
     def _init_per_stats(self):
         self._exercise_order = list(EXERCISE_ORDER)
@@ -363,9 +359,7 @@ class ExercisePage(PageBase):
             except cv2.error:
                 return
 
-        # =========================
         # 라벨 정규화 + 상단 디바운스 (동기화 원천)
-        # =========================
         raw_label = meta.get("label", None)
         curr = (str(raw_label).strip().lower().replace("-", "_") if raw_label else "idle")
 
@@ -429,15 +423,18 @@ class ExercisePage(PageBase):
             if ps is not None:
                 ps["reps"] = int(ps.get("reps", 0)) + int(res.rep_inc)
 
-        # --- 누적: score ---
         if res.score is not None:
-            # 화면 표시
-            if res.color:
-                self.score_overlay.show_score(str(int(res.score)), 100, text_qcolor=res.color)
+            s = int(res.score)
+            if s >= 80:
+                color = QColor(0, 128, 255)     # 파란색
+            elif s >= 60:
+                color = QColor(0, 200, 0)       # 초록색
+            elif s >= 40:
+                color = QColor(255, 140, 0)     # 주황색
             else:
-                self.score_overlay.show_score(str(int(res.score)), 100)
+                color = QColor(255, 0, 0)       # 빨강  
+            self.score_overlay.show_score(str(s), 250, text_qcolor=color)
 
-            # 세션 전체 평균(우상단 카드) 갱신
             self._score_sum += float(res.score)
             self._score_n += 1
             avg = round(self._score_sum / max(1, self._score_n), 1)
@@ -466,17 +463,8 @@ class ExercisePage(PageBase):
         self.pose_panel.set_angles({})
 
     def on_pose_frame(self, kxy, kcf):
-        """
-        kxy: (17,2) numpy array (x,y)
-        kcf: (17,) numpy array (confidence)
-        네가 이미 사용중인 compute_joint_angles()로 각도 dict 생성.
-        """
         try:
             angles = compute_joint_angles(kxy, kcf)  # dict 형태 반환 가정
-            # 예시 keys:
-            # 'Knee(L)','Knee(R)','Hip(L)','Hip(R)','Shoulder(L)','Shoulder(R)',
-            # 'Elbow(L)','Elbow(R)','HipLine(L)','HipLine(R)'
             self.pose_panel.set_angles(angles)
         except Exception:
-            # 안전하게 실패 시 화면만 유지
             pass

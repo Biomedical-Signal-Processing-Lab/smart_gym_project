@@ -1,4 +1,4 @@
-# SQUAT/app/ui/score_painter.py
+# ui/score_painter.py
 from PySide6.QtWidgets import QWidget, QLabel, QGraphicsOpacityEffect
 from PySide6.QtCore import Qt, QPoint, QPropertyAnimation, QEasingCurve, QVariantAnimation
 from PySide6.QtGui import QColor
@@ -19,8 +19,9 @@ class ScoreOverlay(QWidget):
         lbl = QLabel(text, self)
         lbl.setAttribute(Qt.WA_TranslucentBackground, True)
         lbl.setAlignment(Qt.AlignCenter)
-        px = base_px if base_px else max(42, int(self.width() * 0.08))
+        px = base_px if base_px else max(160, int(self.width() * 0.15))
         tc = text_qcolor or QColor(0, 128, 255)
+        tc_r, tc_g, tc_b, tc_a = tc.red(), tc.green(), tc.blue(), tc.alpha()
         lbl.setStyleSheet(f"""
             QLabel {{
                 color: rgba({tc.red()},{tc.green()},{tc.blue()},{tc.alpha()});
@@ -33,9 +34,8 @@ class ScoreOverlay(QWidget):
         """)
         lbl.adjustSize()
 
-        # 중앙 위치에 배치
         x = (self.width() - lbl.width()) // 2
-        y = (self.height() - lbl.height()) // 2
+        y = (self.height() - lbl.height()) // 2 - int(self.height() * 0.1)
         lbl.move(x, y)
         lbl.show()
 
@@ -62,7 +62,7 @@ class ScoreOverlay(QWidget):
         def _apply_font(v):
             lbl.setStyleSheet(f"""
                 QLabel {{
-                    color: rgba({tc.red()},{tc.green()},{tc.blue()},{tc.alpha()});
+                    color: rgba({tc_r},{tc_g},{tc_b},{tc_a});
                     font: 1000 {int(v)}px "Pretendard";
                     padding: 8px 16px;
                     background: rgba(0,0,0,70);
@@ -71,10 +71,10 @@ class ScoreOverlay(QWidget):
                 }}
             """)
             # 크기 바뀌면 가운데 유지
-            old = lbl.pos()
             lbl.adjustSize()
-            lbl.move(old.x() - (lbl.width() - lbl.sizeHint().width())//2,
-                     old.y() - (lbl.height()- lbl.sizeHint().height())//2)
+            new_x = (self.width() - lbl.width()) // 2
+            new_y = (self.height() - lbl.height()) // 2 - int(self.height() * 0.1)
+            lbl.move(new_x, new_y)
         pop_anim.valueChanged.connect(_apply_font)
 
         # 2) 위로 떠오르며 사라짐: 위치 y-80, 불투명도 1→0
