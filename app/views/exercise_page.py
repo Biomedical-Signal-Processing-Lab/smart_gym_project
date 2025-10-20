@@ -17,6 +17,11 @@ from ui.overlay_painter import PoseAnglePanel, VideoCanvas, ExerciseCard, ScoreA
 from ui.score_painter import ScoreOverlay
 from core.evaluators import get_evaluator_by_label, EvalResult, ExerciseEvaluator
 
+## 1) 서비스(CWD 보장 + 상대경로 사용)
+#export SGP_SERVICE_CMD='/bin/bash -lc "cd ~/workspace/python/smart_gym_project && python3 sensor/실전_tempo_balance_fatigue/squat_service_dual.py --user-seq --imu-master L --pair-lag-ms 980"'
+
+# 2) UI에서 읽을 로그 위치 (두 파일이 있는 폴더)
+#export SGP_LOG_DIR="~/workspace/python/smart_gym_project/sensor/data/logs"
 
 # ==========================
 # 로그 폴더 자동 탐색
@@ -35,12 +40,14 @@ def _resolve_log_dir() -> Path:
 
     # 2) 앱 내부 기본
     c1 = app_dir / "data" / "logs"
-    # 3) 형제 sensor 프로젝트
-    c2 = proj_root / "sensor" / "실전_tempo_balance_fatigue" / "data" / "logs"
+    # 3-1) 형제 sensor 프로젝트(기존 경로)
+    c2a = proj_root / "sensor" / "실전_tempo_balance_fatigue" / "data" / "logs"
+    # 3-2) 형제 sensor 프로젝트(새 구조: sensor/data/logs)
+    c2b = proj_root / "sensor" / "data" / "logs"
     # 4) 현재 작업 폴더
     c3 = Path.cwd() / "data" / "logs"
 
-    for c in (c1, c2, c3):
+    for c in (c1, c2a, c2b, c3):
         if (c / "reps_pred_dual.tsv").exists():
             return c.resolve()
 
@@ -230,7 +237,7 @@ class ExercisePage(PageBase):
     def _start_service_if_needed(self):
         """
         환경변수 SGP_SERVICE_CMD 설정 시 서비스 자동 실행.
-        예) SGP_SERVICE_CMD="python3 /abs/path/squat_service_dual.py --user-seq --imu-master L --pair-lag-ms 980"
+        예) SGP_SERVICE_CMD='/bin/bash -lc "cd ~/workspace/python/smart_gym_project && python3 sensor/실전_tempo_balance_fatigue/squat_service_dual.py --user-seq --imu-master L --pair-lag-ms 980"'
         """
         if self._svc_proc is not None and self._svc_proc.poll() is None:
             return
@@ -575,11 +582,10 @@ class ExercisePage(PageBase):
 
     def _reset_state(self):
         self.state = "UP"
-        self.reps = 0
+               self.reps = 0
         self.card.set_count(0)
         self.panel.set_avg(0)
         self.panel.set_advice("올바른 자세로 준비하세요.")
         if self._evaluator: self._evaluator.reset()
         self.ai_panel.set_imu(user_id="-", tempo_score=None, tempo_level=None, imu_state=None)
         self.ai_panel.set_ai(fi_l=None, fi_r=None, stage_l=None, stage_r=None, bi=None, bi_stage=None, bi_text=None)
-
