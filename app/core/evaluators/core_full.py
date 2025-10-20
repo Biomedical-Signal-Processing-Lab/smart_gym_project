@@ -4,6 +4,11 @@ import math
 from PySide6.QtGui import QColor
 from .base import ExerciseEvaluator, EvalResult
 import math
+try:
+    from .advice import get_advice
+except Exception:
+    from advice import get_advice
+
 # ===== Debug helpers =====
 DEBUG_LOWER = False  # 필요 시 False로 끄기
 
@@ -153,10 +158,12 @@ class CoreBodyEvaluator(ExerciseEvaluator):
             self._bp_state = "EXPECT_DOWN"
             self._bp_prev_s = s
             self.prev_label = "burpee"
+            score = 100
+            advice_text = get_advice("jumping_jack", score, ctx=None)
             return EvalResult(
                 rep_inc=1,
                 score=100,                 # 간단히 고정 점수
-                advice="굿.",
+                advice=advice_text,      
                 color=self._color_by_score(100),
                 title="버피",
             )
@@ -259,10 +266,25 @@ class CoreBodyEvaluator(ExerciseEvaluator):
             final_score = 0 if final_score < 0 else (100 if final_score > 100 else final_score)
 
             # 피드백
-            tips = []
-            if elbow_s < 60: tips.append("팔꿈치 더 접어.")
-            if (knee_s is not None) and (knee_s < 80): tips.append("무릎 더 펴.")
-            advice = " / ".join(tips) if tips else "굿."
+            elbow_flare   = bool(meta.get("elbow_flare", False))
+            torso_jitter  = float(meta.get("torso_jitter", 0.0))
+            lumbar_ext    = float(meta.get("lumbar_ext", 0.0))
+
+            # [ADDED] 간단 임계치(필요시 조정)
+            TILT_LIMIT   = 5.0
+            LUMBAR_LIMIT = 10.0
+
+            # [ADDED] advice.py 에 넘길 컨텍스트
+            ctx = {
+                "elbow_not_deep":   (elbow_s < 60.0),
+                "elbow_flare":      elbow_flare,
+                "knee_more_extend": (knee_s is not None and knee_s < 80),
+                "tilt_instability": (torso_jitter > TILT_LIMIT),
+                "back_arch":        (lumbar_ext  > LUMBAR_LIMIT),
+            }
+
+            # [CHANGED] 문자열 직접 조합 → advice.py 사용(직전 문구 제외 + 랜덤 + 팁 결합)
+            advice_text = get_advice("pushup", final_score, ctx)
 
             # 다음 rep 준비
             self._pu_state = "UP"
@@ -272,7 +294,7 @@ class CoreBodyEvaluator(ExerciseEvaluator):
             return EvalResult(
                 rep_inc=1,
                 score=final_score,
-                advice=advice,
+                advice=advice_text,
                 color=self._color_by_score(final_score),   # ← base의 공통 함수 사용
             )
 
@@ -281,7 +303,7 @@ class CoreBodyEvaluator(ExerciseEvaluator):
 
 
     # ---------- jumping jack ----------
-        # ---------- jumping jack ----------
+    
     def _update_Jumping_jack(self, meta: Dict[str, Any]) -> Optional[EvalResult]:
         # --- 각도 가져오기 ---
         s = meta.get("shoulder_avg_deg")

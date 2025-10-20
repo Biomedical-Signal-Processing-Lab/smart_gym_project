@@ -3,6 +3,7 @@ from typing import Dict, Any, Optional, Tuple, List
 import math
 from PySide6.QtGui import QColor
 from .base import ExerciseEvaluator, EvalResult
+from .advice import get_advice
 
 # ===== Debug helpers =====
 DEBUG_LOWER = True  # 필요 시 False로 끄기
@@ -119,7 +120,72 @@ class LowerBodyEvaluator(ExerciseEvaluator):
         else:
             return self._score_snapshot_legraise(meta)
 
-    # ---------- 스쿼트 점수 ----------
+    # ---------- 스쿼트  ----------
+
+    def _update_squat(self, meta: Dict[str, Any]) -> Optional[EvalResult]:
+            knee = _avg_lr(meta, "knee")
+            hip  = _avg_lr(meta, "hip")
+
+            # --- 유효성 검사 ---
+            if knee is None or math.isnan(knee):
+                self._deb = 0
+                return None
+
+            # ===== 상태 전환 로직 =====
+            if self.state == "UP":
+                # 내려가기 시작
+                if knee < self.SQUAT_DOWN_TH:
+                    self._deb += 1
+                    
+                    if self._deb >= self.DEBOUNCE_N:
+                        self.state = "DOWN"
+                        self._deb = 0
+                        # 최소각 초기화
+                        self._min_knee = knee
+                        self._min_hip  = hip
+                        
+            else:  # state == "DOWN"
+                # 내려가는 동안 최소각 갱신
+                if knee is not None:
+                    if not hasattr(self, "_min_knee") or self._min_knee is None or knee < self._min_knee:
+                        self._min_knee = knee
+                if hip is not None:
+                    if not hasattr(self, "_min_hip") or self._min_hip is None or hip < self._min_hip:
+                        self._min_hip = hip
+
+                _dbg(f"[SQUAT] DOWN tracking: min_knee={_fmt(self._min_knee)} min_hip={_fmt(self._min_hip)}")
+
+                # 올라오기 감지
+                if knee >= self.SQUAT_UP_TH:
+                    self._deb += 1
+                    
+                    if self._deb >= self.DEBOUNCE_N-1:
+                        self.state = "UP"
+                        self._deb = 0
+
+                        # ====== 점수 계산: 최소각 기준 ======
+                        meta2 = dict(meta)
+                        if getattr(self, "_min_knee", None) is not None:
+                            meta2["knee_l_deg"] = meta2["knee_r_deg"] = float(self._min_knee)
+                        if getattr(self, "_min_hip", None) is not None:
+                            meta2["hip_l_deg"] = meta2["hip_r_deg"] = float(self._min_hip)
+
+                        score, used, advice = self._score_snapshot_squat(meta2)
+                        
+                        # 다음 세트 대비 초기화
+                        self._min_knee = None
+                        self._min_hip = None
+
+                        return EvalResult(
+                            rep_inc=1,
+                            score=score,
+                            advice=advice,
+                            color=_color(score),
+                        )
+
+            return None
+
+
     def _score_snapshot_squat(self, meta: Dict[str, Any]) -> Tuple[int, Dict[str, float], str]:
         used: Dict[str, float] = {}
         scores: List[int] = []
@@ -140,18 +206,93 @@ class LowerBodyEvaluator(ExerciseEvaluator):
             return 50, used, "각도 인식 불가: 프레임/포즈 확인"
 
         score = int(round(sum(scores) / len(scores)))
-        advice = "엉덩이·무릎 깊이를 함께 맞추세요. 90~100° 구간이 좋아요."
-    
+        #advice = "엉덩이·무릎 깊이를 함께 맞추세요. 90~100° 구간이 좋아요."
+        TILT_LIMIT   = 5.0
+        LUMBAR_LIMIT = 10.0
+        ctx = {
+            "knee_valgus":      bool(meta.get("knee_valgus", False)),   # 무릎 안짚힘
+            "tilt_instability": float(meta.get("torso_jitter", 0.0)) > TILT_LIMIT,  # 상체 흔들림
+            "back_arch":        float(meta.get("lumbar_ext", 0.0))  > LUMBAR_LIMIT, # 허리 과신전
+            # 상황에 따라 켜고 싶으면:
+            # "hip_back":      bool(meta.get("hip_not_back", False)),    # 엉덩이를 뒤로 못 뺌
+        }
+        advice = get_advice("squat", score, ctx)
         return score, used, advice
 
     # ---------- 레그 레이즈 점수 ----------
+
+    def _update_leg_raise(self, meta: Dict[str, Any]) -> Optional[EvalResult]:
+        
+        if getattr(self, "_cooldown", 0) > 0:
+            self._cooldown -= 1
+            return None
+        hip_r = meta.get("hip_r_deg")
+        try:
+            hip_r = float(hip_r) if hip_r is not None else None
+        except Exception:
+            hip_r = None
+
+        # NaN/None 방어
+        if hip_r is None or (isinstance(hip_r, float) and math.isnan(hip_r)):
+            self._deb = 0
+            return None
+        # ====== 상태 전환 ======
+        if self.state == "UP":
+            # 밑으로 내려갈 때(각도 커짐) → DOWN 진입 후보
+            if hip_r >= self.LR_DOWN_TH:
+                self._deb += 1
+                if self._deb >= self.DEBOUNCE_N:
+                    self.state = "DOWN"
+                    self._deb = 0
+                
+                    
+                    if getattr(self, "_passed_up", False):
+                        
+                        frame_id = meta.get("frame_id") or meta.get("frame_idx") or meta.get("ts")
+                        if frame_id is not None and frame_id == getattr(self, "_last_emit_id", None):                          
+                            return None
+
+                        score, used, advice = self._score_snapshot_legraise(meta)
+                         
+                        # 2) 쿨다운/프레임ID 기록
+                        self._last_emit_id = frame_id
+                        self._cooldown = 5          
+
+                        self._passed_up = False      
+                        return EvalResult(
+                            rep_inc=1,
+                            score=score,
+                            advice=advice,
+                            color=_color(score),
+                        )
+
+        else:  # state == "DOWN"
+             
+            if hip_r <= self.LR_UP_TH:
+                self._deb += 1
+                if self._deb >= self.DEBOUNCE_N:
+                    self.state = "UP"
+                    self._deb = 0
+                    self._passed_up = True     
+                     
+        return None
+    
     def _score_snapshot_legraise(self, meta: Dict[str, Any]) -> Tuple[int, Dict[str, float], str]:
         used: Dict[str, float] = {}
         hip = _avg_lr(meta, "hip")
         used["hip"] = hip if hip is not None else float("nan")
+
         score = _score_by(hip, **self.LEG_HIP)   
-        advice = "복부 긴장 유지, 천천히 내려오며 힙 각도 컨트롤!"
-        _dbg(f"[LEG] 점수: hip={_fmt(hip)} → score={score}")
+        
+        
+        TILT_LIMIT   = 5.0
+        LUMBAR_LIMIT = 10.0
+        ctx = {
+            "tilt_instability": float(meta.get("torso_jitter", 0.0)) > TILT_LIMIT,  # 상체 흔들림
+            "back_arch":        float(meta.get("lumbar_ext", 0.0))  > LUMBAR_LIMIT, # 허리 과신전
+        }
+        advice = get_advice("leg_raise", score, ctx)  
+
         return score, used, advice
     
     # ---------- 공개 API ----------
@@ -173,135 +314,5 @@ class LowerBodyEvaluator(ExerciseEvaluator):
             return self._update_squat(meta)
         else:
             return self._update_leg_raise(meta)
-
-    # ---------- 스쿼트 ----------
-    def _update_squat(self, meta: Dict[str, Any]) -> Optional[EvalResult]:
-        knee = _avg_lr(meta, "knee")
-        hip  = _avg_lr(meta, "hip")
-
-        # --- 유효성 검사 ---
-        if knee is None or math.isnan(knee):
-            self._deb = 0
-            return None
-
-        # ===== 상태 전환 로직 =====
-        if self.state == "UP":
-            # 내려가기 시작
-            if knee < self.SQUAT_DOWN_TH:
-                self._deb += 1
-                
-                if self._deb >= self.DEBOUNCE_N:
-                    self.state = "DOWN"
-                    self._deb = 0
-                    # 최소각 초기화
-                    self._min_knee = knee
-                    self._min_hip  = hip
-                    
-        else:  # state == "DOWN"
-            # 내려가는 동안 최소각 갱신
-            if knee is not None:
-                if not hasattr(self, "_min_knee") or self._min_knee is None or knee < self._min_knee:
-                    self._min_knee = knee
-            if hip is not None:
-                if not hasattr(self, "_min_hip") or self._min_hip is None or hip < self._min_hip:
-                    self._min_hip = hip
-
-            _dbg(f"[SQUAT] DOWN tracking: min_knee={_fmt(self._min_knee)} min_hip={_fmt(self._min_hip)}")
-
-            # 올라오기 감지
-            if knee >= self.SQUAT_UP_TH:
-                self._deb += 1
-                
-                if self._deb >= self.DEBOUNCE_N-1:
-                    self.state = "UP"
-                    self._deb = 0
-
-                    # ====== 점수 계산: 최소각 기준 ======
-                    meta2 = dict(meta)
-                    if getattr(self, "_min_knee", None) is not None:
-                        meta2["knee_l_deg"] = meta2["knee_r_deg"] = float(self._min_knee)
-                    if getattr(self, "_min_hip", None) is not None:
-                        meta2["hip_l_deg"] = meta2["hip_r_deg"] = float(self._min_hip)
-
-                    score, used, advice = self._score_snapshot_squat(meta2)
-                    
-                    # 다음 세트 대비 초기화
-                    self._min_knee = None
-                    self._min_hip = None
-
-                    return EvalResult(
-                        rep_inc=1,
-                        score=score,
-                        advice=advice,
-                        color=_color(score),
-                    )
-
-        return None
-
-
-    # ---------- 레그 레이즈 ----------
-    def _update_leg_raise(self, meta: Dict[str, Any]) -> Optional[EvalResult]:
-        
-        if getattr(self, "_cooldown", 0) > 0:
-            self._cooldown -= 1
-            return None
-        hip_r = meta.get("hip_r_deg")
-        try:
-            hip_r = float(hip_r) if hip_r is not None else None
-        except Exception:
-            hip_r = None
-
-        # NaN/None 방어
-        if hip_r is None or (isinstance(hip_r, float) and math.isnan(hip_r)):
-            self._deb = 0
-            _dbg(f"[LEG:R] tick hip_r=None state={self.state} deb={self._deb}")
-            return None
-
-        _dbg(f"[LEG:R] tick hip_r={_fmt(hip_r)} state={self.state} deb={self._deb} passed_up={getattr(self,'_passed_up',False)}")
-
-        # ====== 상태 전환 ======
-        if self.state == "UP":
-            # 밑으로 내려갈 때(각도 커짐) → DOWN 진입 후보
-            if hip_r >= self.LR_DOWN_TH:
-                self._deb += 1
-                _dbg(f"[LEG:R] detect UP→DOWN trigger ({self._deb}/{self.DEBOUNCE_N})")
-                if self._deb >= self.DEBOUNCE_N:
-                    self.state = "DOWN"
-                    self._deb = 0
-                    _dbg("[LEG:R] state→DOWN")
-
-                    # ★ 직전에 위(UP)를 통과했다면, 지금 DOWN 도달이 '완주'이므로 점수+카운트
-                    if getattr(self, "_passed_up", False):
-                        # 1) 같은 프레임 중복 방지
-                        frame_id = meta.get("frame_id") or meta.get("frame_idx") or meta.get("ts")
-                        if frame_id is not None and frame_id == getattr(self, "_last_emit_id", None):
-                            _dbg("[LEG:R] duplicate emit blocked by frame_id guard")
-                            return None
-
-                        score, used, advice = self._score_snapshot_legraise(meta)
-                        _dbg(f"[LEG:R] COUNT at UP→DOWN (cycle complete) → score={score}")
-
-                        # 2) 쿨다운/프레임ID 기록
-                        self._last_emit_id = frame_id
-                        self._cooldown = 5          # ← 필요시 3~8 사이로 조정
-
-                        self._passed_up = False     # 다음 사이클 대비 리셋
-                        return EvalResult(
-                            rep_inc=1,
-                            score=score,
-                            advice=advice,
-                            color=_color(score),
-                        )
-
-        else:  # state == "DOWN"
-             
-            if hip_r <= self.LR_UP_TH:
-                self._deb += 1
-                _dbg(f"[LEG:R] detect DOWN→UP trigger ({self._deb}/{self.DEBOUNCE_N})")
-                if self._deb >= self.DEBOUNCE_N:
-                    self.state = "UP"
-                    self._deb = 0
-                    self._passed_up = True     
-                    _dbg("[LEG:R] state→UP (passed_up=True)")
-
-        return None
+ 
+    

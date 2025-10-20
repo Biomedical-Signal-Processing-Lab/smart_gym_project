@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Dict, Any, Optional, List, Tuple
 from PySide6.QtGui import QColor
 from .base import ExerciseEvaluator, EvalResult
+from .advice import get_advice
 
 # =================== Debug & helpers ===================
 DEBUG_UPPER = True
@@ -142,6 +143,13 @@ class UpperBodyEvaluator(ExerciseEvaluator):
             scores: List[int] = []
             cfgs = self.THRESHOLDS[self.mode]
 
+            TILT_LIMIT   = 5.0
+            LUMBAR_LIMIT = 10.0
+            torso_jitter = float(meta.get("torso_jitter", 0.0))
+            lumbar_ext   = float(meta.get("lumbar_ext", 0.0))
+            elbow_flare  = bool(meta.get("elbow_flare", False))
+
+
             # 운동별 로직 구분
             if self.mode == "shoulder_press":
                 e = _avg_lr(meta, "elbow")
@@ -149,7 +157,13 @@ class UpperBodyEvaluator(ExerciseEvaluator):
                 if e is not None:
                     scores.append(self._score_shoulder_press(e, cfgs["elbow"]))  # ← 팔꿈치만
                     used["elbow"] = e
-                advice = "팔꿈치를 끝까지 펴서 수직으로 밀어 올리세요."
+                    ctx = {
+                            "elbow_flare": elbow_flare,
+                            "tilt_instability": torso_jitter > TILT_LIMIT,
+                            "back_arch":        lumbar_ext   > LUMBAR_LIMIT,
+                            # shoulder press에서 팔꿈치 '깊이' 부족 감지(너무 큰 각도)시 힌트
+                            "elbow_not_deep":   (e is not None and e > 120.0),
+                        }
 
             elif self.mode == "side_lateral_raise":
                 s = _avg_lr(meta, "shoulder")
@@ -159,8 +173,13 @@ class UpperBodyEvaluator(ExerciseEvaluator):
                     # 어깨 각도만 중앙형(삼각형)으로 점수
                     scores.append(self._score_side_lateral(s, cfgs["shoulder"]))
                 used = {"shoulder": s if s is not None else float("nan")}
-                advice = "팔을 몸통과 수평 근처까지만 부드럽게 들어 올리고, 내려올 때 컨트롤하세요."
-
+                #advice = "팔을 몸통과 수평 근처까지만 부드럽게 들어 올리고, 내려올 때 컨트롤하세요."
+                ctx = {
+                           "elbow_flare": elbow_flare,
+                            "tilt_instability": torso_jitter > TILT_LIMIT,
+                            "back_arch":        lumbar_ext   > LUMBAR_LIMIT,
+                        }
+                
             elif self.mode == "dumbbell_row":
                 s = _avg_lr(meta, "shoulder")
                 e = _avg_lr(meta, "elbow")
@@ -168,13 +187,19 @@ class UpperBodyEvaluator(ExerciseEvaluator):
                 _put_angle(meta, "Elbow", e)
                 if s: scores.append(self._score_dumbbell_row(s, cfgs["shoulder"]))
                 if e: scores.append(self._score_dumbbell_row(e, cfgs["elbow"]))
-                advice = "등 근육으로 팔을 당기세요."
+                ctx = {
+                        "tilt_instability": torso_jitter > TILT_LIMIT,
+                        "back_arch":        lumbar_ext   > LUMBAR_LIMIT,
+                    }
 
             else:
                 return 50, {}, "지원되지 않는 운동입니다."
 
             # 평균 점수 산출
             score = int(round(sum(scores) / max(1, len(scores))))
+            advice_text = get_advice(_advice_key(self.mode), score, ctx)
+
+
             return score, used, advice
 
 
