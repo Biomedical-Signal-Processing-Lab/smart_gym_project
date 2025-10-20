@@ -1,18 +1,15 @@
-# guide_page.py  
-from typing import List, Optional, Iterable
-from PySide6.QtCore import Qt, QSize, QUrl
-from PySide6.QtGui import QIcon, QPixmap
+from typing import List, Iterable
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea,
     QFrame, QSizePolicy, QSpacerItem
 )
-from PySide6.QtMultimediaWidgets import QVideoWidget
-from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 from core.page_base import PageBase
 from data.guide_data import Exercise, list_all
 from ui.guide_style import (
-    style_page_root, style_side_panel, style_scrollarea, style_exercise_card, 
-    style_info_card, style_header_title, style_header_chip, style_header_desc, force_bg
+    style_page_root, style_side_panel, style_scrollarea, style_exercise_card,
+    style_header_title, force_bg
 )
 import os
 
@@ -33,7 +30,7 @@ def _clear_layout(layout) -> None:
             _clear_layout(c)
 
 class ExerciseCard(QFrame):
-    def __init__(self, info: Exercise, parent: Optional[QWidget] = None):
+    def __init__(self, info: Exercise, parent: QWidget | None = None):
         super().__init__(parent)
         self.info = info
         self.setObjectName("ExerciseCard")
@@ -58,33 +55,33 @@ class ExerciseCard(QFrame):
 
         title_line.addWidget(title, 1)
         title_line.addWidget(cat, 0, Qt.AlignVCenter)
-
-        sets = QLabel(info.sets_reps)
-        sets.setObjectName("sets")
-        sets.setStyleSheet("background:transparent;")
-
         root.addLayout(title_line)
 
+        # 칩 스타일 포함
         force_bg(self, """
             QFrame#ExerciseCard {
                 background:#ffffff;
                 border:1px solid rgba(0,0,0,0.06);
                 border-radius:16px;
-                min-height:140px;                 
-                padding:18px 24px;              
+                min-height:100px;
+                padding:18px 24px;
             }
             QFrame#ExerciseCard[selected="true"] {
                 background:#1a73e8;
                 border:1px solid #1a73e8;
             }
             QFrame#ExerciseCard[selected="true"] QLabel#title,
-            QFrame#ExerciseCard[selected="true"] QLabel#sets,
             QFrame#ExerciseCard[selected="true"] QLabel#chip { color:white; }
-            QLabel#title { font-size:50px; font-weight:700; color:#0f172a; }
-            QLabel#sets  { color:#6b7380; font-size:16px; }
+
+            QLabel#title { font-size:28px; font-weight:700; color:#0f172a; }
             QLabel#chip  {
-                background:#eef4ff; border:1px solid rgba(25,118,210,0.5); border-radius:999px;
-                padding:2px 10px; color:#24527a; font-size:16px; font-weight:600;
+                background:#eef4ff;
+                border:1px solid rgba(25,118,210,0.5);
+                border-radius:999px;
+                padding:2px 10px;
+                color:#24527a;
+                font-size:14px;
+                font-weight:600;
             }
         """)
 
@@ -92,37 +89,6 @@ class ExerciseCard(QFrame):
         self.setProperty("selected", v)
         self.style().unpolish(self)
         self.style().polish(self)
-
-class InfoCard(QFrame):
-    def __init__(self, title: str, body_widget: QWidget):
-        super().__init__()
-        self.setObjectName("InfoCard")
-
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(22, 22, 22, 22)
-        lay.setSpacing(12)
-
-        ttl = QLabel(title)
-        ttl.setObjectName("CardTitle")
-        ttl.setStyleSheet("background:transparent; color:#111827; font-weight:800; font-size:36px;")
-        lay.addWidget(ttl)
-
-        def paint_texts(w: QWidget):
-            if isinstance(w, QLabel):
-                w.setStyleSheet("background:transparent; color:#0f172a; font-size:24px;")
-            for ch in w.findChildren(QLabel):
-                ch.setStyleSheet("background:transparent; color:#0f172a; font-size:24px;")
-        paint_texts(body_widget)
-
-        lay.addWidget(body_widget)
-
-        force_bg(self, """
-            #InfoCard {
-                background: rgba(255,255,255,0.96);
-                border: 1px solid rgba(0,0,0,0.05);
-                border-radius: 18px;
-            }
-        """)
 
 def bullet_list(items: Iterable[str], numbered: bool = False) -> QWidget:
     w = QWidget()
@@ -134,74 +100,27 @@ def bullet_list(items: Iterable[str], numbered: bool = False) -> QWidget:
         line = QHBoxLayout()
         line.setSpacing(10)
         dot = QLabel(str(i) if numbered else "•")
-        dot.setStyleSheet("background:transparent; color:#4b5563; font-size:24px;")
+        dot.setStyleSheet("background:transparent; color:#4b5563; font-size:20px;")
         dot.setFixedWidth(24)
         lbl = QLabel(t)
         lbl.setWordWrap(True)
         lbl.setStyleSheet("""
             background:rgba(25,118,210,0.10);
-            color:#0f172a; font-size:24px; font-weight:500; border-radius:12px; padding:12px 14px;
+            color:#0f172a; font-size:25px; font-weight:500; border-radius:12px; padding:10px 12px;
         """)
         line.addWidget(dot)
         line.addWidget(lbl, 1)
         v.addLayout(line)
     return w
 
-class IconButton(QPushButton):
-    def __init__(self, png_path: str, size: Optional[int | QSize | tuple[int, int]] = None, parent: Optional[QWidget] = None):
-        super().__init__(parent)
-        self._base_pix = QPixmap(png_path)
-        self._target_size: Optional[QSize] = None
-
-        if size is not None:
-            if isinstance(size, int):
-                self._target_size = QSize(size, size)
-            elif isinstance(size, tuple):
-                self._target_size = QSize(size[0], size[1])
-            else:
-                self._target_size = size
-
-        self.setCursor(Qt.PointingHandCursor)
-        self.setStyleSheet("border:0; background:transparent; padding:0; margin:0;")
-        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        self._update_icon()
-
-    def _scaled_pix(self) -> QPixmap:
-        if self._target_size:
-            return self._base_pix.scaled(self._target_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-        return self._base_pix
-
-    def _update_icon(self) -> None:
-        pix = self._scaled_pix()
-        self.setIcon(QIcon(pix))
-        self.setIconSize(pix.size())
-        self.setFixedSize(pix.size())
-
-    def setPixmap(self, pix: QPixmap, size: Optional[int | QSize | tuple[int, int]] = None) -> None:
-        self._base_pix = pix
-        if size is not None:
-            if isinstance(size, int):
-                self._target_size = QSize(size, size)
-            elif isinstance(size, tuple):
-                self._target_size = QSize(size[0], size[1])
-            else:
-                self._target_size = size
-        self._update_icon()
-
-    def resizeEvent(self, e) -> None:
-        super().resizeEvent(e)
-        self._update_icon()
-
 class GuidePage(PageBase):
-    ICON_SIZE = 200
-
     def __init__(self):
         super().__init__()
         self.setObjectName("GuidePage")
 
-        # ===== 배경 + 글래스 패널 래퍼 추가 (UI만) =====
+        # ===== 배경 =====
         self._bg_pix = None
-        self._bg = QLabel(self)             
+        self._bg = QLabel(self)
         self._bg.setScaledContents(False)
         self._bg.lower()
 
@@ -212,21 +131,21 @@ class GuidePage(PageBase):
                 self._bg_pix = pm
                 self._rescale_bg()
 
-        # 글래스 패널 (기존 root 레이아웃을 이 안에 구성)
+        # 글래스 패널
         self._panel = QFrame(self)
         self._panel.setObjectName("glassPanel")
         self._panel.setAttribute(Qt.WA_StyledBackground, True)
 
-        style_page_root(self)  # 기존 호출은 유지 (테마 변수 사용 중이면 활용됨)
+        style_page_root(self)
 
-        self.exercises = list_all()  # 로직 유지
+        self.exercises = list_all()
 
         # === 패널 내부 루트 레이아웃 ===
         panel_root = QVBoxLayout(self._panel)
         panel_root.setContentsMargins(28, 28, 28, 28)
         panel_root.setSpacing(18)
 
-        # ---------- TopBar (새 UI) ----------
+        # ---------- TopBar ----------
         top = QFrame()
         top.setObjectName("TopBar")
         top_lay = QHBoxLayout(top)
@@ -235,7 +154,7 @@ class GuidePage(PageBase):
 
         self.btn_back = QPushButton("←")
         self.btn_back.setObjectName("BtnBack")
-        self.btn_back.setFixedHeight(72)
+        self.btn_back.setFixedHeight(56)
         self.btn_back.clicked.connect(lambda: self._goto("start"))
 
         self.title = QLabel("운동 가이드")
@@ -248,18 +167,18 @@ class GuidePage(PageBase):
 
         self.btn_user = QPushButton("로그인 필요")
         self.btn_user.setObjectName("BtnUser")
-        self.btn_user.setFixedHeight(68)
+        self.btn_user.setFixedHeight(48)
         self.btn_user.clicked.connect(lambda: self._goto("info"))
 
         self.btn_top_start = QPushButton("▶  운동 시작")
         self.btn_top_start.setObjectName("BtnStart")
-        self.btn_top_start.setFixedHeight(68)
+        self.btn_top_start.setFixedHeight(48)
         self.btn_top_start.clicked.connect(lambda: self._goto("exercise"))
 
         top_lay.addWidget(self.btn_user)
         top_lay.addWidget(self.btn_top_start)
 
-        # ---------- 본문 영역 ----------
+        # ---------- 본문 ----------
         body = QHBoxLayout()
         body.setContentsMargins(0, 0, 0, 0)
         body.setSpacing(18)
@@ -268,7 +187,7 @@ class GuidePage(PageBase):
         self.left_panel = self._build_left_panel()
         body.addWidget(self.left_panel, 2)
 
-        # 우측 디테일 패널 (동영상 + 주의사항만)
+        # 우측 디테일 패널 (운동 제목 + 방법/주의사항)
         self.detail_panel = self._build_detail_panel()
         body.addWidget(self.detail_panel, 3)
 
@@ -281,11 +200,14 @@ class GuidePage(PageBase):
         if self.exercises:
             self._select(self.exercises[0])
 
-    # ---------- 기존 좌측 패널 로직/바인딩 유지, 스타일만 변경 ----------
+    def on_enter(self, ctx):
+        self._set_user_button(ctx)
+
+    # ---------- 좌측 패널 ----------
     def _build_left_panel(self) -> QWidget:
         side = QFrame()
         side.setObjectName("LeftMenu")
-        style_side_panel(side)  
+        style_side_panel(side)
 
         side.setFixedWidth(440)
 
@@ -305,7 +227,7 @@ class GuidePage(PageBase):
         self._cards: List[ExerciseCard] = []
         for ex in self.exercises:
             card = ExerciseCard(ex)
-            style_exercise_card(card)  
+            style_exercise_card(card)
             card.mousePressEvent = lambda e, _ex=ex: self._select(_ex)
             self._cards.append(card)
             lv.addWidget(card)
@@ -317,6 +239,7 @@ class GuidePage(PageBase):
         v.addWidget(scroll, 1)
         return side
 
+    # ---------- 우측 패널 ----------
     def _build_detail_panel(self) -> QWidget:
         panel = QWidget()
         force_bg(panel, "background:transparent;")
@@ -324,71 +247,42 @@ class GuidePage(PageBase):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(16)
 
+        # 제목 (카테고리/설명 없음)
         self.h_title = QLabel("")
-        self.h_title.setObjectName("VideoTitle")
+        self.h_title.setObjectName("HeaderTitle")
         style_header_title(self.h_title)
 
-        self.h_cate = QLabel("")
-        style_header_chip(self.h_cate)
+        # ------- 운동 방법 카드 (steps) -------
+        self.steps_card = QFrame()
+        self.steps_card.setObjectName("StepsCard")
+        steps_box = QVBoxLayout(self.steps_card)
+        steps_box.setContentsMargins(22, 22, 22, 22)
+        steps_box.setSpacing(12)
 
-        self.h_desc = QLabel("")
-        self.h_desc.setTextFormat(Qt.PlainText)
-        self.h_desc.setWordWrap(True)
-        style_header_desc(self.h_desc)
+        steps_title = QLabel("운동 방법")
+        steps_title.setObjectName("StepsTitle")
+        self.steps_widget = bullet_list([], numbered=True)
 
-        self.v_goal = QLabel("")
-        self.v_goal.setWordWrap(True)
-        self.v_reco = QLabel("")
-        self.v_reco.setWordWrap(True)
-        self.v_cate = QLabel("")
-        self.v_cate.setWordWrap(True)
+        steps_box.addWidget(steps_title)
+        steps_box.addWidget(self.steps_widget)
 
-        # ------- 동영상 카드 -------
-        self.video_card = QFrame()
-        self.video_card.setObjectName("VideoCard")
-        video_box = QVBoxLayout(self.video_card)
-        video_box.setContentsMargins(22, 22, 22, 22)
-        video_box.setSpacing(8)
-
-        video_title = QLabel("동영상")
-        video_title.setObjectName("VideoTitle")
-
-        self._video_widget = QVideoWidget()
-        self._video_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-
-        video_box.addWidget(video_title)
-        video_box.addWidget(self._video_widget, 1)
-
-        # 플레이어
-        self._player = QMediaPlayer(self)
-        self._audio_output = QAudioOutput(self)
-        self._audio_output.setVolume(0.0)  # 무음
-        self._player.setAudioOutput(self._audio_output)
-        self._player.setVideoOutput(self._video_widget)
-
-        demo_video = asset_path("assets", "videos", "jm_guide.mov")
-        self._set_player_source(demo_video)
-        self._player.mediaStatusChanged.connect(self._loop_video)
-        self._player.play()
-
-        # ------- 주의사항 카드 -------
-        tips_card = QFrame()
-        tips_card.setObjectName("TipsCard")
-        tips_box = QVBoxLayout(tips_card)
+        # ------- 주의사항 카드 (tips) -------
+        self.tips_card = QFrame()
+        self.tips_card.setObjectName("TipsCard")
+        tips_box = QVBoxLayout(self.tips_card)
         tips_box.setContentsMargins(22, 22, 22, 22)
         tips_box.setSpacing(12)
 
-        self.tips_title = QLabel("주의사항 및 팁")
-        self.tips_title.setObjectName("TipsTitle")
+        tips_title = QLabel("주의사항 및 팁")
+        tips_title.setObjectName("TipsTitle")
         self.tips_widget = bullet_list([], numbered=False)
 
-        tips_box.addWidget(self.tips_title)
+        tips_box.addWidget(tips_title)
         tips_box.addWidget(self.tips_widget)
 
-        self.steps_widget = bullet_list([], numbered=True)
-
-        layout.addWidget(self.video_card, 1)
-        layout.addWidget(tips_card, 1)
+        layout.addWidget(self.h_title)
+        layout.addWidget(self.steps_card, 1)
+        layout.addWidget(self.tips_card, 1)
 
         return panel
 
@@ -396,11 +290,6 @@ class GuidePage(PageBase):
         for c in self._cards:
             c.setSelected(c.info.key == ex.key)
         self.h_title.setText(ex.title)
-        self.h_cate.setText(ex.category)
-        self.h_desc.setText(ex.description)
-        self.v_goal.setText(ex.goal_muscles)
-        self.v_reco.setText(ex.recommend)
-        self.v_cate.setText(ex.category)
         self._replace_bullet(self.steps_widget, ex.steps, True)
         self._replace_bullet(self.tips_widget, ex.tips, False)
 
@@ -412,12 +301,12 @@ class GuidePage(PageBase):
             row.setSpacing(10)
             dot = QLabel(str(i) if numbered else "•")
             dot.setFixedWidth(24)
-            dot.setStyleSheet("background:transparent; color:#4b5563; font-size:24px;")
+            dot.setStyleSheet("background:transparent; color:#4b5563; font-size:20px;")
             lbl = QLabel(t)
             lbl.setWordWrap(True)
             lbl.setStyleSheet("""
-                background:rgba(25,118,210,0.10); color:#0f172a; font-size:24px; font-weight:500;
-                border-radius:12px; padding:12px 14px;
+                background:rgba(25,118,210,0.10); color:#0f172a; font-size:25px; font-weight:500;
+                border-radius:12px; padding:10px 12px;
             """)
             row.addWidget(dot)
             row.addWidget(lbl, 1)
@@ -430,21 +319,11 @@ class GuidePage(PageBase):
         if router:
             router.navigate(page)
 
-    def on_enter(self, ctx):
-        try:
-            if getattr(ctx, "current_user_name", None):
-                self.btn_user.setText(f"{ctx.current_user_name} 님")
-            else:
-                self.btn_user.setText("홍길동 님")
-        except Exception:
-            self.btn_user.setText("홍길동 님")
-
-    # ===== 배경/패널/비디오 레이아웃 처리 (UI만) =====
+    # ===== 배경/패널 레이아웃 처리 =====
     def resizeEvent(self, e):
         super().resizeEvent(e)
         self._rescale_bg()
         self._layout_panel()
-        self._fix_video_ratio()
 
     def _layout_panel(self):
         w, h = self.width(), self.height()
@@ -462,31 +341,19 @@ class GuidePage(PageBase):
             )
             self._bg.setPixmap(scaled)
 
-    def _fix_video_ratio(self):
-        if not self.video_card:
-            return
-        avail_w = max(self.video_card.width() - 44, 1)
-        by_width_h = int(avail_w * 9 / 16)
+    def _set_user_button(self, ctx) -> None:
+        try:
+            is_in = getattr(ctx, "is_logged_in", None)
+            logged_in = bool(is_in() if callable(is_in) else getattr(ctx, "current_user_id", None))
+            if logged_in:
+                name = getattr(ctx, "current_user_name", None) or "사용자"
+                self.btn_user.setText(f"{name} 님")
+            else:
+                self.btn_user.setText("로그인")
+        except Exception:
+            self.btn_user.setText("로그인")
 
-        right_h = max(self.video_card.parentWidget().height(), 1)
-        max_h = int(right_h * 0.55)
-
-        target_h = min(by_width_h, max_h)
-        target_w = int(target_h * 16 / 9)
-        self._video_widget.setFixedSize(QSize(target_w, target_h))
-
-    # ===== 비디오 유틸 =====
-    def _loop_video(self, status):
-        if status == QMediaPlayer.EndOfMedia:
-            self._player.setPosition(0)
-            self._player.play()
-
-    def _set_player_source(self, path: str):
-        if not os.path.isabs(path):
-            path = asset_path(*path.lstrip("/").split("/"))
-        self._player.setSource(QUrl.fromLocalFile(path))
-
-    # ===== 새 테마 스타일시트 (시안 반영) =====
+    # ===== 스타일 =====
     def _stylesheet(self) -> str:
         return """
         #glassPanel {
@@ -511,8 +378,8 @@ class GuidePage(PageBase):
             border: none;
             padding: 0 22px;
             border-radius: 14px;
-            font-size: 50px;
-            font-weight: 500;
+            font-size: 28px;
+            font-weight: 600;
         }
         #BtnBack:hover { background: rgba(255,255,255,0.28); }
         #BtnUser {
@@ -521,8 +388,8 @@ class GuidePage(PageBase):
             border: none;
             padding: 0 22px;
             border-radius: 14px;
-            font-size: 28px;
-            font-weight: 500;
+            font-size: 18px;
+            font-weight: 600;
         }
         #BtnUser:hover { background: rgba(255,255,255,0.28); }
         #BtnStart {
@@ -531,8 +398,8 @@ class GuidePage(PageBase):
             border: none;
             padding: 0 24px;
             border-radius: 14px;
-            font-size: 28px;
-            font-weight: 500;
+            font-size: 18px;
+            font-weight: 700;
         }
         #BtnStart:hover { background: #11b85a; }
 
@@ -543,14 +410,14 @@ class GuidePage(PageBase):
             max-width: 420px;
         }
 
-        #VideoCard, #TipsCard {
+        #StepsCard, #TipsCard {
             background: rgba(255,255,255,0.96);
             border: 1px solid rgba(0,0,0,0.05);
             border-radius: 18px;
         }
-        #VideoTitle, #TipsTitle {
+        #StepsTitle, #TipsTitle {
             color: #111827;
-            font-size: 36px;
+            font-size: 28px;
             font-weight: 700;
         }
         """

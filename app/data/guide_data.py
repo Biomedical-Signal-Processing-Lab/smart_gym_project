@@ -13,6 +13,7 @@ class Exercise:
     recommend: str
     steps: List[str]
     tips: List[str]
+    video: str = ""
 
 def _to_exercise_list(raw_list: List[Dict[str, Any]]) -> List[Exercise]:
     return [Exercise(**d) for d in raw_list]
@@ -40,6 +41,7 @@ EXERCISES_DATA: List[Dict[str, Any]] = [
             "무릎은 발끝과 같은 방향으로 향하게 하세요",
             "호흡을 자연스럽게 유지",
         ],
+        "video":"assets/videos/jm_guide.mp4",
     },
     {
         "key": "shoulder_press",
@@ -60,6 +62,7 @@ EXERCISES_DATA: List[Dict[str, Any]] = [
             "손목이 꺾이지 않게 수직으로 유지합니다",
             "덤벨을 내릴 때 어깨 근육의 긴장을 유지하세요",
         ],
+        "video":"assets/videos/ms_guide.mp4",
     },
     {
         "key": "push_up",
@@ -80,6 +83,7 @@ EXERCISES_DATA: List[Dict[str, Any]] = [
             "팔꿈치는 몸통에서 약 45도 각도를 유지합니다",
             "근육의 수축을 느끼며 반동 없이 천천히 수행합니다",
         ],
+        "video":"assets/videos/jm_guide.mp4",
     },
     {
         "key": "leg_raise",
@@ -100,6 +104,7 @@ EXERCISES_DATA: List[Dict[str, Any]] = [
             "반동 없이 천천히 올리고 천천히 내립니다",
             "복부 긴장을 유지하며 호흡을 멈추지 않습니다",
         ],
+        "video":"assets/videos/jm_guide.mp4",
     },
     {
         "key": "bent_over_dumbbell_row",
@@ -120,6 +125,7 @@ EXERCISES_DATA: List[Dict[str, Any]] = [
             "덤벨은 팔이 아니라 등으로 당긴다는 느낌으로 수행합니다",
             "최대 수축 지점에서 1초 정도 정지하면 자극이 증가합니다",
         ],
+        "video":"assets/videos/jm_guide.mp4",
     },
     {
         "key": "side_lateral_raise",
@@ -140,6 +146,7 @@ EXERCISES_DATA: List[Dict[str, Any]] = [
             "반동 없이 천천히 올리고 내립니다",
             "어깨 긴장을 유지하며 팔꿈치 위치를 일정하게 유지합니다",
         ],
+        "video":"assets/videos/jm_guide.mp4",
     },
     {
         "key": "burpee",
@@ -160,5 +167,6 @@ EXERCISES_DATA: List[Dict[str, Any]] = [
             "호흡을 일정하게 유지하며 리듬감 있게 수행합니다",
             "초보자는 푸쉬업 없이 동작을 단순화해도 좋습니다",
         ],
+        "video":"assets/videos/jm_guide.mp4",
     },
 ]

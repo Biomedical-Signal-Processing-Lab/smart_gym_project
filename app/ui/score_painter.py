@@ -19,7 +19,7 @@ class ScoreOverlay(QWidget):
         lbl = QLabel(text, self)
         lbl.setAttribute(Qt.WA_TranslucentBackground, True)
         lbl.setAlignment(Qt.AlignCenter)
-        px = base_px if base_px else max(42, int(self.width() * 0.08))
+        px = base_px if base_px else max(100, int(self.width() * 0.08))
         tc = text_qcolor or QColor(0, 128, 255)
         lbl.setStyleSheet(f"""
             QLabel {{

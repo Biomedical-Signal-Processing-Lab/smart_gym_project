@@ -82,17 +82,6 @@ class InfoPage(PageBase):
         # 공통 스타일 적용
         apply_info_page_styles(self)
 
-        # 페이지 배경 이미지 적용 (프로젝트 경로 기준)
-        self.setStyleSheet(self.styleSheet() + """
-            QWidget#InfoPage {
-                background: #f5f8ff;
-                background-image: url(assets/background/bg_gym.jpg);
-                background-position: center;
-                background-repeat: no-repeat;
-                background-origin: content;
-            }
-        """)
-
         root = QVBoxLayout(self)
         root.setContentsMargins(18, 18, 18, 18)
         root.setSpacing(12)
@@ -228,7 +217,9 @@ class InfoPage(PageBase):
         self.btn_left = QPushButton("◀")
         self.btn_right = QPushButton("▶")
         for b in (self.btn_left, self.btn_right):
-            b.setFixedWidth(20)
+            b.setFixedWidth(48)          
+            b.setMinimumHeight(32)       
+            b.setStyleSheet("font-size:20px; padding:4px 8px;")
         nav.addStretch(1)
         nav.addWidget(self.btn_left)
         nav.addWidget(self.btn_right)
@@ -362,7 +353,7 @@ class InfoPage(PageBase):
                     by_day[str(d)][ex] = int(cnt or 0)
 
                 week_total = sum(sum(by_day[d].values()) for d in days)
-                self.lbl_week_total.setText(f"이번 주 총 운동 횟수  {week_total:,}회")
+                self.lbl_week_total.setText(f"총 운동 횟수  {week_total:,}회")
 
                 # 전체 운동별 통계 (실제 존재하는 운동만 카드로)
                 stats = (

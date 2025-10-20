@@ -63,12 +63,14 @@ class MainWindow(QMainWindow):
 
 
 if __name__ == "__main__":
+    os.environ.setdefault("QT_MEDIA_BACKEND", "gstreamer") 
+    os.environ.setdefault("GST_PLUGIN_FEATURE_RANK", "pulsesink:0")
     QLocale.setDefault(QLocale(QLocale.Korean, QLocale.SouthKorea))
-    app = QApplication(sys.argv)
-    font_path = os.path.join(BASE_DIR, "assets", "fonts", "GodoB.ttf")
     
-    if not set_app_font(font_path, 15):
-        print("기본 폰트로 애플리케이션을 시작합니다.")
+    app = QApplication(sys.argv)
+    
+    font_path = os.path.join(BASE_DIR, "assets", "fonts", "GodoB.ttf")
+    set_app_font(font_path, 15)
 
     ctx = AppContext()
     win = MainWindow(ctx)
