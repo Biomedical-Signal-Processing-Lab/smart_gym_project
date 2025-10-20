@@ -14,8 +14,11 @@ class VideoCanvas(QWidget):
 
     def __init__(self, min_size: QSize | None = None, parent=None):
         super().__init__(parent)
-        self._video = QLabel("camera: no frame", self)
+        self.setStyleSheet("background-color: #000000;")
+
+        self._video = QLabel("로딩중...", self)
         self._video.setAlignment(Qt.AlignCenter)
+        self._video.setStyleSheet("color:#FFFFFF; font-size:42px; font-weight:600;")
         if min_size:
             self._video.setMinimumSize(min_size)
 
@@ -246,7 +249,7 @@ class ActionButtons(QWidget):
             }
 
             QPushButton#btn-info {
-                background: rgba(255,255,255,0.14);
+                background: rgba(34, 197, 94, 0.22);  
                 color: #FFFFFF;
                 border: 2px solid rgba(255,255,255,0.22);
             }
