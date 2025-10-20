@@ -249,7 +249,7 @@ class ActionButtons(QWidget):
             }
 
             QPushButton#btn-info {
-                background: rgba(34, 197, 94, 0.22);  
+                background: rgba(34, 197, 94, 0.8);  
                 color: #FFFFFF;
                 border: 2px solid rgba(255,255,255,0.22);
             }
