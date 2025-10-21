@@ -2,10 +2,10 @@
   "upper_body": {
     "shoulder_press": {
       "metrics": { "elbow": { "shape": "triangular", "min": 80.0, "best": 100.0, "max": 160.0 } },
-      "phases":  { "up_th": 125.0, "down_th": 110.0, "debounce_n": 3, "cooldown_n": 6 }
+      "phases":  { "up_th": 125.0, "down_th": 110.0, "debounce_n": 3, "cooldown_n": 3 }
     },
     "side_lateral_raise": {
-      "metrics": { "shoulder": { "shape": "triangular", "min": 40.0, "best": 60.0, "max": 80.0 } },
+      "metrics": { "shoulder": { "shape": "triangular", "min": 45.0, "best": 60.0, "max": 75.0 } },
       "phases":  { "up_th": 80.0, "down_th": 60.0, "debounce_n": 3, "cooldown_n": 4 }
     },
     "dumbbell_row": {
@@ -20,9 +20,9 @@
     "squat": {
       "metrics": {
         "hip":  { "best": 100.0, "maxv": 65.0, "minv": 150.0 },
-        "knee": { "best": 100.0, "maxv": 80.0, "minv": 140.0 }
+        "knee": { "best": 120.0, "maxv": 80.0, "minv": 150.0 }
       },
-      "phases": { "down_th": 140.0, "up_th": 165.0, "debounce_n": 3 }
+      "phases": { "down_th": 145.0, "up_th": 165.0, "debounce_n": 2 }
     },
     "leg_raise": {
       "metrics": { "hip": { "best": 140.0, "max": 165.0, "min": 110.0 } },

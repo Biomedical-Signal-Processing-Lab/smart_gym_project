@@ -14,10 +14,12 @@ class ScoreOverlay(QWidget):
         return super().resizeEvent(e)
 
     def show_score(self, text: str = "100", base_px: int | None = None,
-                   text_qcolor: QColor | None = None):
+                   text_qcolor: QColor | None = None, 
+                   supertext: str | None = None, super_qcolor: QColor | None = None):
         lbl = QLabel(text, self)
         lbl.setAttribute(Qt.WA_TranslucentBackground, True)
         lbl.setAlignment(Qt.AlignCenter)
+
         px = base_px if base_px else max(160, int(self.width() * 0.15))
         tc = text_qcolor or QColor(0, 128, 255)
         tc_r, tc_g, tc_b, tc_a = tc.red(), tc.green(), tc.blue(), tc.alpha()
@@ -37,6 +39,37 @@ class ScoreOverlay(QWidget):
         y = (self.height() - lbl.height()) // 2 - int(self.height() * 0.1)
         lbl.move(x, y)
         lbl.show()
+
+        top_lbl = None
+        top_fx = None
+        if supertext:
+            top_lbl = QLabel(supertext, self)
+            top_lbl.setAttribute(Qt.WA_TranslucentBackground, True)
+            top_lbl.setAlignment(Qt.AlignCenter)
+
+            stc = super_qcolor or tc
+            stc_r, stc_g, stc_b, stc_a = stc.red(), stc.green(), stc.blue(), stc.alpha()
+
+            top_px = max(18, int(px * 0.28))
+            top_lbl.setStyleSheet(f"""
+                QLabel {{
+                    color: rgba({stc_r},{stc_g},{stc_b},{stc_a});
+                    font: 800 {top_px}px "Pretendard";
+                    padding: 4px 10px;
+                    background: rgba(0,0,0,70);
+                    border-radius: 10px;
+                    border: 1px solid rgba(0,0,0,120);
+                }}
+            """)
+            top_lbl.adjustSize()
+            top_x = (self.width() - top_lbl.width()) // 2
+            top_y = y - top_lbl.height() - 12
+            top_lbl.move(top_x, top_y)
+            top_lbl.show()
+
+            top_fx = QGraphicsOpacityEffect(top_lbl)
+            top_lbl.setGraphicsEffect(top_fx)
+            top_fx.setOpacity(0.0)
 
         # 투명도 효과
         fx = QGraphicsOpacityEffect(lbl)
@@ -74,6 +107,13 @@ class ScoreOverlay(QWidget):
             new_x = (self.width() - lbl.width()) // 2
             new_y = (self.height() - lbl.height()) // 2 - int(self.height() * 0.1)
             lbl.move(new_x, new_y)
+
+            if supertext and top_lbl:
+                top_lbl.adjustSize()
+                top_x2 = (self.width() - top_lbl.width()) // 2
+                top_y2 = new_y - top_lbl.height() - 12
+                top_lbl.move(top_x2, top_y2)
+
         pop_anim.valueChanged.connect(_apply_font)
 
         # 2) 위로 떠오르며 사라짐: 위치 y-80, 불투명도 1→0
@@ -89,9 +129,35 @@ class ScoreOverlay(QWidget):
         fade_out.setEndValue(0.0)
         fade_out.setEasingCurve(QEasingCurve.InQuad)
 
+        if supertext and top_lbl and top_fx:
+            top_fade_in = QPropertyAnimation(top_fx, b"opacity", self)
+            top_fade_in.setDuration(120)
+            top_fade_in.setStartValue(0.0)
+            top_fade_in.setEndValue(1.0)
+            top_fade_in.setEasingCurve(QEasingCurve.OutCubic)
+
+            top_move = QPropertyAnimation(top_lbl, b"pos", self)
+            top_move.setDuration(900)
+            top_move.setStartValue(QPoint(top_lbl.x(), top_lbl.y()))
+            top_move.setEndValue(QPoint(top_lbl.x(), top_lbl.y()))
+            top_move.setEasingCurve(QEasingCurve.OutCubic)
+
+            top_fade_out = QPropertyAnimation(top_fx, b"opacity", self)
+            top_fade_out.setDuration(900)
+            top_fade_out.setStartValue(1.0)
+            top_fade_out.setEndValue(0.0)
+            top_fade_out.setEasingCurve(QEasingCurve.InQuad)
+
+            top_fade_in.start()
+            top_move.start()
+            top_fade_out.start()
+
         # 정리
         def cleanup():
+            if supertext and top_lbl:
+                top_lbl.deleteLater()
             lbl.deleteLater()
+       
         fade_out.finished.connect(cleanup)
 
         # 시퀀스 실행: 팝(120ms) → 떠오르며 페이드(900ms)

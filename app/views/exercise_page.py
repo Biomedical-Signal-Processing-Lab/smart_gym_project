@@ -16,7 +16,6 @@ from core.page_base import PageBase
 from core.hailo_cam_adapter import HailoCamAdapter
 from core.evaluators import get_evaluator_by_label, EvalResult, ExerciseEvaluator, get_advice_with_sfx  
 
-from ui.overlay_painter import VideoCanvas, ExerciseCard, ScoreAdvicePanel, ActionButtons  
 from ui.score_painter import ScoreOverlay
 from ui.overlay_painter import VideoCanvas, ExerciseCard, ScoreAdvicePanel, ActionButtons, AIMetricsPanel
 
@@ -39,12 +38,12 @@ _LABEL_KO = {
     "idle": "휴식중",
     "squat": "스쿼트",
     "pushup": "푸시업",
-    "shoulder_press": "숄더 프레스",
+    "shoulder_press": "숄더프레스",
     "side_lateral_raise": "사레레",
-    "bentover_dumbbell": "덤벨 로우",
+    "bentover_dumbbell": "덤벨로우",
     "burpee": "버피",
-    "leg_raise": "레그 레이즈",
-    "jumping_jack": "팔벌려 뛰기",
+    "leg_raise": "레그레이즈",
+    "jumping_jack": "팔벌려뛰기",
 }
 
 EXERCISE_ORDER = [
@@ -120,16 +119,19 @@ class ExercisePage(PageBase):
         self._last_imu_size = 0
 
         self._angles_prev = None
+        self._tempo_level_latest: str | None = None
 
-        # 사운드(SFX)
-        self._last_sfx_key = None  
-        self._last_sfx_ts = 0.0     
-        self._SFX_COOLDOWN_SEC = 0.4
         self._sfx_enabled = True
         self._sfx_dir = (PROJ_ROOT / "assets" / "advice").resolve()
-        self._sfx_volume = 0.85
-        self._sfx_cache: dict[str, QSoundEffect] = {}
+        self._sfx_volume = 1
+        self._SFX_COOLDOWN_SEC = 0.6
+        self._last_sfx_ts = 0.0
         self._sfx_custom_map: dict[str, str] = {}
+
+        self._sfx_player = QSoundEffect(self)
+        self._sfx_player.setLoopCount(1)
+        self._sfx_player.setVolume(self._sfx_volume)  # 0.0 ~ 1.0
+        self._current_sfx_path = None
 
     def _init_per_stats(self):
         self._exercise_order = list(EXERCISE_ORDER)
@@ -193,7 +195,7 @@ class ExercisePage(PageBase):
 
     def _sync_panel_sizes(self):
         W, H = self.width(), self.height()
-        card_w = 600
+        card_w = 650
         card_h = int(H * 0.5)
         panel_w = 600
         panel_h = int(H * 0.5)
@@ -304,6 +306,7 @@ class ExercisePage(PageBase):
                         tempo_level = last2[11] if len(last2) > 11 else None
                         self.ai_panel.set_imu(tempo_score=tempo_score,
                                               tempo_level=tempo_level, imu_state=imu_state)
+                        self._tempo_level_latest = tempo_level
         except Exception:
             pass  
 
@@ -332,7 +335,7 @@ class ExercisePage(PageBase):
         self.card.set_title(title_text)
 
         self._mount_overlays()
-        self.ai_panel.set_imu(user_id="-", tempo_score=None, tempo_level=None, imu_state=None)
+        self.ai_panel.set_imu(tempo_score=None, tempo_level=None, imu_state=None)
         self.ai_panel.set_ai(fi_l=None, fi_r=None, stage_l=None, stage_r=None, bi=None, bi_stage=None, bi_text=None)
 
         try:
@@ -494,6 +497,7 @@ class ExercisePage(PageBase):
                 self.ai_panel.set_ai(fi_l=None, fi_r=None, stage_l=None, stage_r=None,
                                     bi=None, bi_stage=None, bi_text=None)
                 self.ai_panel.set_imu(tempo_score=None, tempo_level=None, imu_state=None)
+                self._tempo_level_latest = None
 
         if label in (None, "idle") or not self._evaluator:
             self.panel.set_advice("올바른 자세로 준비하세요.")
@@ -536,7 +540,38 @@ class ExercisePage(PageBase):
                 color = QColor(255, 140, 0)     # 주황색
             else:
                 color = QColor(255, 0, 0)       # 빨강  
-            self.score_overlay.show_score(str(s), 250, text_qcolor=color)
+            
+            supertext = None
+            super_color = None
+            if label == "squat":
+                raw_lvl = (self._tempo_level_latest or "").strip()
+                lvl_up = raw_lvl.upper()
+
+                mapping_text = {
+                    "A_매우안정": "PERFECT!", "A": "PERFECT!",
+                    "B_안정": "GOOD",        "B": "GOOD",
+                    "C_보통": "NOT BAD",     "C": "NOT BAD",
+                    "D_불안정": "BAD",       "D": "BAD",
+                }
+                if lvl_up in mapping_text:
+                    supertext = f"TEMPO {mapping_text[lvl_up]}"
+                    if   lvl_up in ("A", "A_매우안정"):
+                        super_color = QColor(0, 128, 255)   # 매우안정 → 파랑
+                    elif lvl_up in ("B", "B_안정"):
+                        super_color = QColor(0, 200, 0)     # 안정 → 초록
+                    elif lvl_up in ("C", "C_보통"):
+                        super_color = QColor(255, 140, 0)   # 보통 → 주황
+                    elif lvl_up in ("D", "D_불안정"):
+                        super_color = QColor(255, 0, 0)     # 불안정 → 빨강
+                elif raw_lvl:
+                    supertext = f"TEMPO UNKNOWN"
+
+            self.score_overlay.show_score(
+                str(s),
+                text_qcolor=color,              # 점수 색 (그대로)
+                supertext=supertext,            # 템포 문구
+                super_qcolor=super_color        # 템포 글자색만 별도 지정
+            )
 
             self._score_sum += float(res.score)
             self._score_n += 1
@@ -561,6 +596,7 @@ class ExercisePage(PageBase):
         self.card.set_count(0)
         self.panel.set_avg(0)
         self.panel.set_advice("올바른 자세로 준비하세요.")
+        self._tempo_level_latest = None 
         if self._evaluator:
             self._evaluator.reset()
 
@@ -582,34 +618,25 @@ class ExercisePage(PageBase):
     def _play_sfx(self, sfx_key: str):
         if not self._sfx_enabled or not sfx_key:
             return
+
         now = time.time()
-        if (self._last_sfx_key == sfx_key) and (now - self._last_sfx_ts < self._SFX_COOLDOWN_SEC):
+        if (now - self._last_sfx_ts) < self._SFX_COOLDOWN_SEC:
             return
 
-        # 이미 재생 중이라면 새 요청은 무시 (2회차 무시용)
-        for eff in self._sfx_cache.values():
-            try:
-                if eff.isPlaying():
-                    print(f"[SFX] busy → skip '{sfx_key}'")
-                    # 재생 중엔 skip, 다음 요청만 기다림
-                    return
-            except Exception:
-                pass
-        
+        # 재생 중이면 절대 새 소리 안 틀기
+        try:
+            if self._sfx_player.isPlaying():
+                return
+        except Exception:
+            pass
+
         path = self._resolve_sfx_path(sfx_key)
         if not path:
             return
-        
-        eff = self._sfx_cache.get(path)
-        if eff is None:
-            eff = QSoundEffect(self)
-            eff.setSource(QUrl.fromLocalFile(path))
-            eff.setLoopCount(1)
-            eff.setVolume(self._sfx_volume)  # 0.0~1.0
-            self._sfx_cache[path] = eff
 
-        eff.play()
-        print(f"[음성파일] playing: key={sfx_key}, file={path}")
+        if self._current_sfx_path != path:
+            self._sfx_player.setSource(QUrl.fromLocalFile(path))
+            self._current_sfx_path = path
 
-        self._last_sfx_key = sfx_key
-        self._last_sfx_ts = time.time()                   
+        self._sfx_player.play()
+        self._last_sfx_ts = now
