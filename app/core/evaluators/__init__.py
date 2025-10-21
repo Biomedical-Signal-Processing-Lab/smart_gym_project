@@ -3,12 +3,17 @@ from __future__ import annotations
 from typing import Optional
 from .base import EvalResult, ExerciseEvaluator
 
-__all__ = [
-    "get_evaluator_by_label",
-    "EvalResult",
-    "ExerciseEvaluator",
-]
+def get_advice_with_sfx(*args, **kwargs):
+    from importlib import import_module
+    mod = import_module(".advice", __package__)  # core.evaluators.advice
+    return mod.get_advice_with_sfx(*args, **kwargs)
 
+__all__ = [
+    "compute_joint_angles", "update_meta_with_angles",
+    "ExerciseEvaluator", "EvalResult",
+    "get_evaluator_by_label",
+    "get_advice_with_sfx",
+]
 # ---- 라벨 별칭(한글/대소문자/공백/대시 호환) ----
 _ALIAS = {
     # 하체

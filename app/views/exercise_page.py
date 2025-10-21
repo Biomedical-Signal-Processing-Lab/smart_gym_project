@@ -1,32 +1,49 @@
+# ExercisePage.py 
 import time
+import os, shlex, subprocess, signal
+from pathlib import Path
 import cv2
-from PySide6.QtCore import QTimer
+import numpy as np
+import sys
+from datetime import datetime
+
+from PySide6.QtCore import QTimer 
 from PySide6.QtGui import QImage, QColor
 from PySide6.QtWidgets import QVBoxLayout
-from core.evaluators.pose_angles import compute_joint_angles  
 
-import numpy as np
 from core.evaluators.pose_angles import update_meta_with_angles
-
 from core.page_base import PageBase
 from core.hailo_cam_adapter import HailoCamAdapter
 
-from ui.overlay_painter import PoseAnglePanel, VideoCanvas, ExerciseCard, ScoreAdvicePanel, ActionButtons
+from ui.overlay_painter import VideoCanvas, ExerciseCard, ScoreAdvicePanel, ActionButtons  
 from ui.score_painter import ScoreOverlay
-
 from core.evaluators import get_evaluator_by_label, EvalResult, ExerciseEvaluator
+from ui.overlay_painter import VideoCanvas, ExerciseCard, ScoreAdvicePanel, ActionButtons, AIMetricsPanel
+
+PROJ_ROOT = Path("~/workspace/python/smart_gym_project/app").expanduser().resolve()
+
+SERVICE_CMD_FIXED = (
+    f'/bin/bash -lc "cd \'{PROJ_ROOT.as_posix()}\' && '
+    'python3 sensor/squat_service_dual.py --user-seq --imu-master L --pair-lag-ms 980"'
+)
+
+MODEL_DIR = PROJ_ROOT / "sensor" / "models"
+LOG_DIR  = PROJ_ROOT / "sensor" / "data" / "logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+SVC_LOG = (LOG_DIR / f"squat_service_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log").as_posix()
+PRED_TSV = LOG_DIR / "reps_pred_dual.tsv"
+IMU_TSV  = LOG_DIR / "imu_tempo.tsv"
 
 _LABEL_KO = {
     None: "휴식중",
     "idle": "휴식중",
     "squat": "스쿼트",
-    "leg_raise": "레그 레이즈",
     "pushup": "푸시업",
     "shoulder_press": "숄더 프레스",
     "side_lateral_raise": "사레레",
-    "Bentover_Dumbbell": "덤벨 로우",
     "bentover_dumbbell": "덤벨 로우",
     "burpee": "버피",
+    "leg_raise": "레그 레이즈",
     "jumping_jack": "팔벌려 뛰기",
 }
 
@@ -49,20 +66,20 @@ class ExercisePage(PageBase):
         self.cam = None
         self.state = "UP"
         self.reps = 0
-
         self._score_sum = 0.0
         self._score_n = 0
         self._session_started_ts = None
         self._last_label = None
-        self._exercise_order: list[str] = list(EXERCISE_ORDER)
-        self._per_stats: dict[str, dict] = {}  
-
-        self._no_person_since: float | None = None
+        self._no_person_since = None
         self.NO_PERSON_TIMEOUT_SEC = 10.0
-        self._entered_at: float = 0.0
+        self._entered_at = 0.0
         self.NO_PERSON_GRACE_SEC = 1.5
 
         self._active = False
+        self._exercise_order: list[str] = list(EXERCISE_ORDER)
+        self._per_stats: dict[str, dict] = {}
+
+        self._svc_proc = None
 
         self.canvas = VideoCanvas()
         self.canvas.setContentsMargins(0, 0, 0, 0)
@@ -75,8 +92,8 @@ class ExercisePage(PageBase):
         self.actions = ActionButtons()
         self.actions.endClicked.connect(self._end_clicked)
         self.actions.infoClicked.connect(self._info_clicked)
-        self.pose_panel = PoseAnglePanel()
 
+        self.ai_panel = AIMetricsPanel()
         self.score_overlay = ScoreOverlay(self)
 
         root = QVBoxLayout(self)
@@ -91,76 +108,18 @@ class ExercisePage(PageBase):
         self.timer.timeout.connect(self._tick)
         self.PAGE_FPS_MS = 33
 
+        self.ai_timer = QTimer(self)
+        self.ai_timer.timeout.connect(self._poll_tsv)
+        self.AI_POLL_MS = 250
+
+        self._title_hold = {"label": None, "cnt": 0}
         self._evaluator: ExerciseEvaluator | None = None
         self._last_eval_label: str | None = None
 
-        self.sll_cnt = 0
-        self.db_cnt = 0
+        self._last_pred_size = 0
+        self._last_imu_size = 0
 
-        self.title_kor = "휴식중"
-
-        # ===== 라벨 동기화(상단 디바운스) 상태 =====
-        self.LABEL_HOLD_FRAMES = 30
-        self._label_candidate: str | None = None
-        self._label_cnt: int = 0
-        self._stable_label: str = "idle"
-
-    def _draw_skeleton(self, frame_bgr, people, conf_thr=0.65, show_idx=False):
-        EDGES = [
-            (5, 7), (7, 9), (6, 8), (8, 10), (5, 6), (11, 12), (5, 11), (6, 12),
-            (11, 13), (13, 15), (12, 14), (14, 16)
-        ]
-        if not people:
-            return
-
-        H, W = frame_bgr.shape[:2]
-        max_len2 = (max(W, H) * 0.6) ** 2
-        LINE_COLOR = (144, 238, 144)
-
-        for p in people:
-            pts = p.get("kpt", [])
-            vis = [False] * len(pts)
-            for j, pt in enumerate(pts):
-                if len(pt) < 3:
-                    continue
-                if float(pt[2]) >= conf_thr:
-                    vis[j] = True
-
-            for a, b in EDGES:
-                if a < len(pts) and b < len(pts) and vis[a] and vis[b]:
-                    x1_, y1_ = int(pts[a][0]), int(pts[a][1])
-                    x2_, y2_ = int(pts[b][0]), int(pts[b][1])
-                    dx, dy = x1_ - x2_, y1_ - y2_
-                    if (dx * dx + dy * dy) <= max_len2:
-                        cv2.line(frame_bgr, (x1_, y1_), (x2_, y2_), LINE_COLOR, 2)
-
-    def _mount_overlays(self):
-        self.canvas.clear_overlays()
-        self.canvas.add_overlay(self.card, anchor="top-left")
-        self.canvas.add_overlay(self.panel, anchor="top-right")
-        self.canvas.add_overlay(self.actions, anchor="bottom-right")
-        self.canvas.add_overlay(self.pose_panel, anchor="bottom-left")
-
-        self.card.show(); self.panel.show(); self.actions.show()
-        self._sync_panel_sizes()
-
-    def _sync_panel_sizes(self):
-        W, H = self.width(), self.height()
-        if W <= 0 or H <= 0:
-            return
-
-        def clamp(v, lo, hi): return max(lo, min(hi, v))
-        card_w = 600
-        card_h = int(H * 0.5)
-        self.card.setFixedSize(card_w, card_h)
-
-        panel_w = 600
-        panel_h = int(H * 0.5)
-        self.panel.setFixedSize(panel_w, panel_h)
-
-        pa_w = int(clamp(W * 0.22, 260, 380))
-        pa_h = int(pa_w * 0.88)
-        self.pose_panel.setFixedSize(pa_w, pa_h)
+        self._angles_prev = None
 
     def _init_per_stats(self):
         self._exercise_order = list(EXERCISE_ORDER)
@@ -183,8 +142,9 @@ class ExercisePage(PageBase):
 
     def _build_summary(self):
         per_list = []
-        for lb in self._exercise_order:
-            ps = self._per_stats.get(lb) or {}
+        for lb in getattr(self, "_exercise_order", []): 
+            ps = self._per_stats.get(lb) if hasattr(self, "_per_stats") else {}
+            ps = ps or {}
             reps = int(ps.get("reps", 0))
             ssum = float(ps.get("score_sum", 0.0))
             sn   = int(ps.get("score_n", 0))
@@ -209,23 +169,124 @@ class ExercisePage(PageBase):
             "exercises": per_list,  
         }
 
-    def _end_clicked(self):
-        self._active = False
-        if self.timer.isActive():
-            self.timer.stop()
-        try:
-            self.ctx.cam.stop()
-        except Exception:
-            pass
-        summary = self._build_summary()
-        try:
-            if hasattr(self.ctx, "save_workout_session"):
-                self.ctx.save_workout_session(summary)
-        except Exception:
-            pass
-        if hasattr(self.ctx, "goto_summary"):
-            self.ctx.goto_summary(summary)
+    def _mount_overlays(self):
         self.canvas.clear_overlays()
+        self.canvas.add_overlay(self.card, anchor="top-left")
+        self.canvas.add_overlay(self.panel, anchor="top-right")
+        self.canvas.add_overlay(self.actions, anchor="bottom-right")
+        self.canvas.add_overlay(self.ai_panel, anchor="bottom-left")  
+        self.card.show()
+        self.panel.show()
+        self.actions.show()
+        self.ai_panel.show()
+        self._sync_panel_sizes()
+
+    def _sync_panel_sizes(self):
+        W, H = self.width(), self.height()
+        card_w = 600
+        card_h = int(H * 0.5)
+        panel_w = 600
+        panel_h = int(H * 0.5)
+        self.card.setFixedSize(card_w, card_h)
+        self.panel.setFixedSize(panel_w, panel_h)
+
+        pa_w = 600
+        pa_h = int(H * 0.4)
+        self.ai_panel.setFixedSize(pa_w, pa_h)
+
+    def _start_service_if_needed(self):
+        if self._svc_proc is not None and self._svc_proc.poll() is None:
+            return
+
+        pyexe = sys.executable  
+        args = [
+            pyexe,
+            "sensor/squat_service_dual.py",
+            "--user-seq",
+            "--imu-master", "L",
+            "--pair-lag-ms", "980",
+        ]
+
+        env = os.environ.copy()
+        env["SGP_LOG_DIR"] = LOG_DIR.as_posix()
+
+        try:
+            self._svc_proc = subprocess.Popen(
+                args,
+                cwd=PROJ_ROOT.as_posix(),     
+                stdout=open(SVC_LOG, "ab", buffering=0),
+                stderr=subprocess.STDOUT, 
+                env=env,
+                start_new_session=True,
+            )
+            print(f"[ExercisePage] started service pid={self._svc_proc.pid} (log: {SVC_LOG})")
+        except Exception as e:
+            print(f"[ExercisePage] start service failed: {e}")
+            self._svc_proc = None
+
+    # ===== 클래스 내부: _stop_service 교체 =====
+    def _stop_service(self):
+        p = self._svc_proc
+        self._svc_proc = None
+        if not p:
+            return
+
+        try:
+            if p.poll() is None:
+                os.killpg(p.pid, signal.SIGINT)
+                p.wait(timeout=5)
+        except Exception:
+            pass
+
+        try:
+            if p.poll() is None:
+                os.killpg(p.pid, signal.SIGTERM)
+                p.wait(timeout=2)
+        except Exception:
+            pass
+
+        try:
+            if p.poll() is None:
+                os.killpg(p.pid, signal.SIGKILL)
+        except Exception:
+            pass
+        print("[ExercisePage] service stopped")
+
+    def _poll_tsv(self):
+        try:
+            if PRED_TSV.exists():
+                sz = PRED_TSV.stat().st_size
+                if sz != self._last_pred_size and sz > 0:
+                    self._last_pred_size = sz
+                    with PRED_TSV.open("r", encoding="utf-8") as f:
+                        lines = f.readlines()
+                    if len(lines) >= 2:
+                        last = lines[-1].strip().split("\t")
+                        fi_l     = float(last[3]) if len(last) > 3 else None
+                        fi_r     = float(last[4]) if len(last) > 4 else None
+                        bi       = float(last[8]) if len(last) > 8 else None
+                        stage_l  = last[9]  if len(last) > 9  else None
+                        stage_r  = last[10] if len(last) > 10 else None
+                        bi_stage = last[11] if len(last) > 11 else None
+                        bi_text  = last[12] if len(last) > 12 else None
+                        self.ai_panel.set_ai(fi_l=fi_l, fi_r=fi_r, stage_l=stage_l, stage_r=stage_r,
+                                             bi=bi, bi_stage=bi_stage, bi_text=bi_text)
+
+            if IMU_TSV.exists():
+                sz2 = IMU_TSV.stat().st_size
+                if sz2 != self._last_imu_size and sz2 > 0:
+                    self._last_imu_size = sz2
+                    with IMU_TSV.open("r", encoding="utf-8") as f:
+                        lines2 = f.readlines()
+                    if len(lines2) >= 2:
+                        last2 = lines2[-1].strip().split("\t")
+                        imu_state   = last2[5] if len(last2) > 5 else None
+                        tempo_score = int(float(last2[10])) if len(last2) > 10 else None
+                        tempo_level = last2[11] if len(last2) > 11 else None
+                        self.ai_panel.set_imu(tempo_score=tempo_score,
+                                              tempo_level=tempo_level, imu_state=imu_state)
+        except Exception:
+            pass  
 
     def _info_clicked(self):
         try:
@@ -234,6 +295,7 @@ class ExercisePage(PageBase):
         except Exception:
             pass
 
+    # Lifecycle
     def on_enter(self, ctx):
         self.ctx = ctx
         self._session_started_ts = time.time()
@@ -244,7 +306,6 @@ class ExercisePage(PageBase):
 
         self._evaluator = None
         self._last_eval_label = None
-
         self._no_person_since = None
         self._entered_at = time.time()
 
@@ -252,7 +313,8 @@ class ExercisePage(PageBase):
         self.card.set_title(title_text)
 
         self._mount_overlays()
-        self.pose_panel.set_angles({})
+        self.ai_panel.set_imu(user_id="-", tempo_score=None, tempo_level=None, imu_state=None)
+        self.ai_panel.set_ai(fi_l=None, fi_r=None, stage_l=None, stage_r=None, bi=None, bi_stage=None, bi_text=None)
 
         try:
             self.ctx.face.stop_stream()
@@ -261,26 +323,58 @@ class ExercisePage(PageBase):
 
         if not hasattr(self.ctx, "cam") or self.ctx.cam is None:
             self.ctx.cam = HailoCamAdapter()
-
         self.ctx.cam.start()
+
+        self._start_service_if_needed()
 
         self._active = True
         if self.timer.isActive():
             self.timer.stop()
         self.timer.start(self.PAGE_FPS_MS)
 
+        self._last_pred_size = 0
+        self._last_imu_size = 0
+
+        if self.ai_timer.isActive():
+            self.ai_timer.stop()
+        self.ai_timer.start(self.AI_POLL_MS)
+
     def on_leave(self, ctx):
         self._active = False
-        if self.timer.isActive():
-            self.timer.stop()
+        if self.timer.isActive(): self.timer.stop()
+        if self.ai_timer.isActive(): self.ai_timer.stop()
         try:
             ctx.cam.stop()
         except Exception:
             pass
+
+        self._stop_service()
+
         self.canvas.clear_overlays()
         self._evaluator = None
         self._last_eval_label = None
 
+    # End Button
+    def _end_clicked(self):
+        self._active = False
+        if self.timer.isActive(): self.timer.stop()
+        if self.ai_timer.isActive(): self.ai_timer.stop()
+        try:
+            self.ctx.cam.stop()
+        except Exception:
+            pass
+
+        self._stop_service()
+
+        summary = self._build_summary()
+        try:
+            if hasattr(self.ctx, "save_workout_session"): self.ctx.save_workout_session(summary)
+        except Exception:
+            pass
+        if hasattr(self.ctx, "goto_summary"): self.ctx.goto_summary(summary)
+        self.canvas.clear_overlays()
+
+    # Tick (기존 포즈 & 점수 로직 유지)
     def _tick(self):
         if not self._active or not self.timer.isActive():
             return
@@ -289,7 +383,6 @@ class ExercisePage(PageBase):
         now = time.time()
         in_grace = (now - self._entered_at) < self.NO_PERSON_GRACE_SEC
 
-        # --- no-person 타임아웃 ---
         m_ok = bool(meta.get("ok", False))
         if in_grace:
             self._no_person_since = None
@@ -300,55 +393,56 @@ class ExercisePage(PageBase):
                 elif (now - self._no_person_since) >= self.NO_PERSON_TIMEOUT_SEC:
                     self._active = False
                     try:
-                        if self.timer.isActive():
-                            self.timer.stop()
+                        if self.timer.isActive(): self.timer.stop()
                     except Exception:
                         pass
                     try:
                         self.ctx.cam.stop()
                     except Exception:
                         pass
+                    self._stop_service()
                     self._no_person_since = None
                     self._goto("guide")
                     return
             else:
                 self._no_person_since = None
 
-        # --- 프레임 + 스켈레톤 ---
-        if not self._active:
-            return
-
         frame = self.ctx.cam.frame()
-
         if frame is not None:
             try:
                 bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
                 people = self.ctx.cam.people()
-                self._draw_skeleton(bgr, people, conf_thr=0.65)
+                # skeleton draw preserved
+                EDGES = [(5,7),(7,9),(6,8),(8,10),(5,6),(11,12),(5,11),(6,12),(11,13),(13,15),(12,14),(14,16)]
+                if people:
+                    H, W = bgr.shape[:2]
+                    max_len2 = (max(W, H)*0.6) ** 2
+                    LINE_COLOR = (144, 238, 144)
+                    for p in people:
+                        pts = p.get("kpt", [])
+                        vis = [len(pt)>=3 and float(pt[2])>=0.65 for pt in pts]
+                        for a,b in EDGES:
+                            if a<len(pts) and b<len(pts) and vis[a] and vis[b]:
+                                x1_,y1_ = int(pts[a][0]), int(pts[a][1])
+                                x2_,y2_ = int(pts[b][0]), int(pts[b][1])
+                                dx,dy = x1_-x2_, y1_-y2_
+                                if (dx*dx + dy*dy) <= max_len2:
+                                    cv2.line(bgr, (x1_,y1_), (x2_,y2_), LINE_COLOR, 2)
 
+                # angles (kept for evaluator usage even if panel removed)
                 try:
                     if people:
                         kpt = people[0].get("kpt", [])
                         if kpt and len(kpt) >= 17:
                             kxy = np.array([[pt[0], pt[1]] for pt in kpt], dtype=np.float32)
                             kcf = np.array([(pt[2] if len(pt) > 2 else 1.0) for pt in kpt], dtype=np.float32)
-
-                            # meta에 각도 자동 추가 (Elbow, Shoulder, Knee, Hip 등)
                             angles = update_meta_with_angles(
-                                meta,
-                                kxy,
-                                kcf,
-                                conf_thr=0.5,
-                                ema=0.2,
+                                meta, kxy, kcf, conf_thr=0.5, ema=0.2,
                                 prev=getattr(self, "_angles_prev", None),
                             )
                             self._angles_prev = angles
-                            meta["_kpt"] = kpt   # ← 좌표 직접 쓰는 evaluator(버피)가 사용
-                            self.pose_panel.set_angles(angles)
-
-                except Exception as _e:
-                    # 각도 계산 오류 발생해도 멈추지 않게
-                    print(f"[angle_calc error] {_e}")
+                            meta["_kpt"] = kpt
+                except Exception:
                     pass
 
                 frame_rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
@@ -359,59 +453,37 @@ class ExercisePage(PageBase):
             except cv2.error:
                 return
 
-        # 라벨 정규화 + 상단 디바운스 (동기화 원천)
         raw_label = meta.get("label", None)
-        curr = (str(raw_label).strip().lower().replace("-", "_") if raw_label else "idle")
-
-        if self._label_candidate != curr:
-            self._label_candidate = curr
-            self._label_cnt = 1
+        title_kor = _LABEL_KO.get(raw_label, (raw_label if raw_label else "휴식중"))
+        hold = self._title_hold
+        if hold["label"] != title_kor:
+            hold["label"] = title_kor
+            hold["cnt"] = 1
         else:
-            self._label_cnt += 1
-
-        if not getattr(self, "_stable_label", None):
-            self._stable_label = curr
-
-        if self._label_cnt >= self.LABEL_HOLD_FRAMES and curr != self._stable_label:
-            self._stable_label = curr
-
-        stable = self._stable_label  
-
-        # --- 한글 타이틀 갱신(안정 라벨 기준) ---
-        title_kor = _LABEL_KO.get(stable, (stable if stable else "휴식중"))
-        if title_kor != self._last_label:
+            hold["cnt"] += 1
+        if hold["cnt"] >= 2 and title_kor != self._last_label:
             self.card.set_title(title_kor)
             self._last_label = title_kor
 
-        label = stable if stable else "idle"
-
-        # 라벨 변경 시 evaluator 교체 + reset
+        label = raw_label if raw_label else "idle"
         if self._last_eval_label != label:
             self._last_eval_label = label
             self._evaluator = get_evaluator_by_label(label) if label not in (None, "idle") else None
-            if self._evaluator:
-                self._evaluator.reset()
+            if self._evaluator: self._evaluator.reset()
 
-        # 휴식/미인식 상태면 기본 코칭만 표시
         if label in (None, "idle") or not self._evaluator:
             self.panel.set_advice("올바른 자세로 준비하세요.")
             return
 
-        # evaluator로 한 프레임 평가
         try:
             res: EvalResult = self._evaluator.update(meta)
-        except Exception as e:
-            print(f"[Evaluator Error] {e}")
+        except Exception:
             return
-
         if not res:
             return
 
-        # 코칭
         if res.advice:
             self.panel.set_advice(res.advice)
-
-        # --- 누적: reps ---
         if res.rep_inc:
             self.reps += res.rep_inc
             if hasattr(self.card, "set_count"):
@@ -440,7 +512,6 @@ class ExercisePage(PageBase):
             avg = round(self._score_sum / max(1, self._score_n), 1)
             self.panel.set_avg(avg)
 
-            # 운동별 평균용 누적
             ps = self._per_stats.get(label)
             if ps is not None:
                 ps["score_sum"] = float(ps.get("score_sum", 0.0)) + float(res.score)
@@ -452,6 +523,7 @@ class ExercisePage(PageBase):
         self.score_overlay.setGeometry(self.rect())
         self.score_overlay.raise_()
 
+    # Reset State
     def _reset_state(self):
         self.state = "UP"
         self.reps = 0
@@ -460,11 +532,6 @@ class ExercisePage(PageBase):
         self.panel.set_advice("올바른 자세로 준비하세요.")
         if self._evaluator:
             self._evaluator.reset()
-        self.pose_panel.set_angles({})
 
-    def on_pose_frame(self, kxy, kcf):
-        try:
-            angles = compute_joint_angles(kxy, kcf)  # dict 형태 반환 가정
-            self.pose_panel.set_angles(angles)
-        except Exception:
-            pass
+        self.ai_panel.set_imu(tempo_score=None, tempo_level=None, imu_state=None)
+        self.ai_panel.set_ai(fi_l=None, fi_r=None, stage_l=None, stage_r=None, bi=None, bi_stage=None, bi_text=None)

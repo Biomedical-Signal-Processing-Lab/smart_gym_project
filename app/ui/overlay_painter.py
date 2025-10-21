@@ -298,11 +298,6 @@ class ActionButtons(QWidget):
         self._btn_info.setEnabled(info_enabled)
 
 class PoseAnglePanel(QWidget):
-    """
-    좌측 하단에 표시할 관절 각도 패널
-    - columns: [부위, L, R, Avg]
-    - keys 예시: 'Knee(L)', 'Knee(R)', 'Hip(L)', 'Hip(R)', 'Shoulder(L)', 'Shoulder(R)', 'Elbow(L)', 'Elbow(R)', 'HipLine(L)', 'HipLine(R)'
-    """
     ROW_KEYS = [
         ("Knee",      "Knee(L)",      "Knee(R)"),
         ("Hip",       "Hip(L)",       "Hip(R)"),
@@ -393,12 +388,6 @@ class PoseAnglePanel(QWidget):
             return "-"
 
     def set_angles(self, angles: dict):
-        """
-        angles 예: {
-          'Knee(L)': 132.47, 'Knee(R)': 125.96,
-          'Hip(L)': 148.22, 'Hip(R)': 143.09, ...
-        }
-        """
         for part, lkey, rkey in self.ROW_KEYS:
             l = angles.get(lkey)
             r = angles.get(rkey)
@@ -410,3 +399,82 @@ class PoseAnglePanel(QWidget):
             self._cells[f"{part}:R"].setText(self._fmt(r))
             self._cells[f"{part}:Avg"].setText(self._fmt(avg))
 
+class AIMetricsPanel(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setStyleSheet("""
+            QWidget {
+                background: rgba(0, 0, 0, 160);
+                border-radius: 16px;
+            }
+            QLabel#title {
+                color: #FFFFFF; font-size: 50px; font-weight: 500; letter-spacing: 0.5px;
+                background: transparent;
+            }
+            QLabel#dim {
+                color: #BFC6CF; font-size: 25px; font-weight: 500; background: transparent;
+            }
+            QLabel#val {
+                color: #FFFFFF; font-size: 25px; font-weight: 500; background: transparent;
+            }
+        """)
+
+        wrap = QVBoxLayout(self)
+        wrap.setContentsMargins(14, 12, 14, 12)
+        wrap.setSpacing(8)
+
+        title = QLabel("스쿼트 센서 데이터", self)
+        title.setObjectName("title")
+        wrap.addWidget(title)
+
+        grid_host = QWidget(self)
+        grid = QGridLayout(grid_host)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(6)
+
+        rows = [
+            ("템포점수",     "tempo_score"),
+            ("템포판정",     "tempo_level"),
+            ("상태",        "imu_state"),
+            ("L_피로도",      "fi_l"),
+            ("R_피로도",      "fi_r"),
+            ("L_피로도판정",  "stage_l"),
+            ("R_피로도판정",  "stage_r"),
+            ("불균형",        "bi"),
+            ("불균형판정",    "bi_stage"),
+            ("불균형설명",    "bi_text"),
+        ]
+
+        self._cells = {}
+        for r, (lab, key) in enumerate(rows):
+            k = QLabel(lab, self); k.setObjectName("dim")
+            v = QLabel("-",  self); v.setObjectName("val")
+            grid.addWidget(k, r, 0)
+            grid.addWidget(v, r, 1)
+            self._cells[key] = v
+
+        wrap.addWidget(grid_host)
+
+    @staticmethod
+    def _fmt_num(x, nd=3):
+        try:
+            return f"{float(x):.{nd}f}"
+        except Exception:
+            return "-"
+
+    def set_imu(self, user_id=None, tempo_score=None, tempo_level=None, imu_state=None):
+        if tempo_score is not None: self._cells["tempo_score"].setText(str(int(tempo_score)))
+        if tempo_level is not None: self._cells["tempo_level"].setText(str(tempo_level))
+        if imu_state is not None:   self._cells["imu_state"].setText(str(imu_state))
+
+    def set_ai(self, fi_l=None, fi_r=None, stage_l=None, stage_r=None,
+               bi=None, bi_stage=None, bi_text=None):
+        if fi_l is not None:     self._cells["fi_l"].setText(self._fmt_num(fi_l))
+        if fi_r is not None:     self._cells["fi_r"].setText(self._fmt_num(fi_r))
+        if stage_l is not None:  self._cells["stage_l"].setText(str(stage_l))
+        if stage_r is not None:  self._cells["stage_r"].setText(str(stage_r))
+        if bi is not None:       self._cells["bi"].setText(self._fmt_num(bi))
+        if bi_stage is not None: self._cells["bi_stage"].setText(str(bi_stage))
+        if bi_text is not None:  self._cells["bi_text"].setText(str(bi_text))

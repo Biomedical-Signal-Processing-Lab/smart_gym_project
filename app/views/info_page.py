@@ -56,7 +56,6 @@ class _NoMouseViewBox(pg.ViewBox):
     def contextMenuEvent(self, ev):  ev.ignore()
 
 class _HBar(QFrame):
-    """제목 + 우측 퍼센트 값 + 가로 ProgressBar"""
     def __init__(self, title: str, color="#1976d2", parent=None):
         super().__init__(parent)
         self.setObjectName("_HBar")
@@ -80,7 +79,6 @@ class _HBar(QFrame):
         self.bar.setRange(0, 100)
         self.bar.setValue(0)
         self.bar.setTextVisible(False)
-        # 색상 스타일
         self.bar.setStyleSheet(f"""
             QProgressBar {{
                 background: #e8eef7; border: 0; border-radius: 8px; height: 14px;
@@ -98,12 +96,6 @@ class _HBar(QFrame):
 
 
 class _AnalysisPanel(QFrame):
-    """
-    분석 탭 내용:
-      - 오늘 스쿼트: 횟수, 평균 점수
-      - 불균형(왼/오): 퍼센트 바 2개
-      - 템포(내림/올림): 퍼센트 바 2개
-    """
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("AnalysisPanel")
@@ -237,14 +229,12 @@ class InfoPage(PageBase):
         self._build_ui()
 
     def _build_ui(self):
-        # 공통 스타일 적용
         apply_info_page_styles(self)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(18, 18, 18, 18)
         root.setSpacing(12)
 
-        # ── 상단 보라색 패널(좌: 타이틀, 우: 버튼) ─────────────────────────
         top_bar = QFrame()
         top_bar.setObjectName("TopBar")
         top_bar.setStyleSheet("""
@@ -766,7 +756,6 @@ class InfoPage(PageBase):
             "pushup": "푸시업",
             "shoulder_press": "숄더 프레스",
             "side_lateral_raise": "사레레",
-            "Bentover_Dumbbell": "덤벨 로우",
             "bentover_dumbbell": "덤벨 로우",
             "burpee": "버피",
             "jumping_jack": "점핑잭",
