@@ -14,9 +14,11 @@ site-packages/
 # 파일
 app/data/** 
 !app/data/guide_data.py
+!app/data/angle_data.json
 *.log
 app/models/insightface_cache/
 start_smart_gym.sh
+app/sensor/data/
 
 # IDE
 .vscode/

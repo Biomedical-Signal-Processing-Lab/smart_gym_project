@@ -484,7 +484,7 @@ class ExercisePage(PageBase):
             hold["cnt"] = 1
         else:
             hold["cnt"] += 1
-        if hold["cnt"] >= 2 and title_kor != self._last_label:
+        if hold["cnt"] >= 3 and title_kor != self._last_label:
             self.card.set_title(title_kor)
             self._last_label = title_kor
 
@@ -595,14 +595,10 @@ class ExercisePage(PageBase):
             except Exception:
                 pass
         
-        
         path = self._resolve_sfx_path(sfx_key)
         if not path:
-            
             return
         
-
-
         eff = self._sfx_cache.get(path)
         if eff is None:
             eff = QSoundEffect(self)
@@ -611,7 +607,6 @@ class ExercisePage(PageBase):
             eff.setVolume(self._sfx_volume)  # 0.0~1.0
             self._sfx_cache[path] = eff
 
-        #eff.stop()
         eff.play()
         print(f"[음성파일] playing: key={sfx_key}, file={path}")
 
