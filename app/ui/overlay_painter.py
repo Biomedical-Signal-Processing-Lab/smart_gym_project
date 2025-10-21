@@ -129,15 +129,15 @@ class ExerciseCard(QWidget):
             }
             QLabel#titleValue {
                 color: #FFFFFF;
-                font-size: 150px;
-                font-weight: 700;
-                letter-spacing: 3px;
+                font-size: 120px;
+                font-weight: 600;
+                letter-spacing: 2px;
                 background: transparent;
             }
             QLabel#countValue {
                 color: #00E0FF;
                 font-size: 200px;
-                font-weight: 700;
+                font-weight: 600;
                 letter-spacing: 3px;
                 background: transparent;
             }
@@ -400,11 +400,16 @@ class PoseAnglePanel(QWidget):
 class AIMetricsPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setObjectName("aimetrics")
         self.setAttribute(Qt.WA_StyledBackground, True)
+
         self.setStyleSheet("""
-            QWidget {
-                background: rgba(0, 0, 0, 160);
+            #aimetrics {
+                background: rgba(0, 0, 0, 80);   
                 border-radius: 16px;
+            }
+            #aimetrics QWidget {
+                background: transparent;
             }
             QLabel#title {
                 color: #FFFFFF; font-size: 50px; font-weight: 500; letter-spacing: 0.5px;
@@ -422,14 +427,17 @@ class AIMetricsPanel(QWidget):
         wrap.setContentsMargins(14, 12, 14, 12)
         wrap.setSpacing(8)
 
-        title = QLabel("스쿼트 센서 데이터", self)
+        title = QLabel("근전도 센서 데이터", self)
         title.setObjectName("title")
         wrap.addWidget(title)
 
         grid_host = QWidget(self)
+        grid_host.setObjectName("grid_host")
+        grid_host.setAttribute(Qt.WA_StyledBackground, False)   
+
         grid = QGridLayout(grid_host)
         grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(12)
+        grid.setHorizontalSpacing(2)
         grid.setVerticalSpacing(6)
 
         rows = [
@@ -462,7 +470,7 @@ class AIMetricsPanel(QWidget):
         except Exception:
             return "-"
 
-    def set_imu(self, user_id=None, tempo_score=None, tempo_level=None, imu_state=None):
+    def set_imu(self, tempo_score=None, tempo_level=None, imu_state=None):
         self._cells["tempo_score"].setText("-" if tempo_score is None else str(int(tempo_score)))
         self._cells["tempo_level"].setText("-" if tempo_level is None else str(tempo_level))
         self._cells["imu_state"].setText("-" if imu_state is None else str(imu_state))
