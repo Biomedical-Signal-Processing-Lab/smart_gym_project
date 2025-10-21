@@ -76,6 +76,7 @@ def _create_instance(key: str) -> ExerciseEvaluator:
 
     # 알 수 없는 라벨
     raise KeyError(f"Unknown evaluator label: {key}")
+
 def get_evaluator_by_label(label: str) -> Optional[ExerciseEvaluator]:
     """운동 라벨로 평가기 싱글톤을 반환 (지연 import/생성)."""
     if not label:

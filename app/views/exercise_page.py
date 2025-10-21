@@ -7,9 +7,10 @@ import numpy as np
 import sys
 from datetime import datetime
 
-from PySide6.QtCore import QTimer 
+from PySide6.QtCore import QTimer ,QUrl
 from PySide6.QtGui import QImage, QColor
 from PySide6.QtWidgets import QVBoxLayout
+from PySide6.QtMultimedia import QSoundEffect
 
 from core.evaluators.pose_angles import update_meta_with_angles
 from core.page_base import PageBase
@@ -17,9 +18,10 @@ from core.hailo_cam_adapter import HailoCamAdapter
 
 from ui.overlay_painter import VideoCanvas, ExerciseCard, ScoreAdvicePanel, ActionButtons  
 from ui.score_painter import ScoreOverlay
-from core.evaluators import get_evaluator_by_label, EvalResult, ExerciseEvaluator
-from ui.overlay_painter import VideoCanvas, ExerciseCard, ScoreAdvicePanel, ActionButtons, AIMetricsPanel
 
+from ui.overlay_painter import VideoCanvas, ExerciseCard, ScoreAdvicePanel, ActionButtons, AIMetricsPanel
+from core.evaluators import get_evaluator_by_label, EvalResult, ExerciseEvaluator, get_advice_with_sfx  
+ 
 PROJ_ROOT = Path("~/workspace/python/smart_gym_project/app").expanduser().resolve()
 
 SERVICE_CMD_FIXED = (
@@ -120,6 +122,16 @@ class ExercisePage(PageBase):
         self._last_imu_size = 0
 
         self._angles_prev = None
+
+        # 사운드(SFX)
+        self._last_sfx_key = None  
+        self._last_sfx_ts = 0.0     
+        self._SFX_COOLDOWN_SEC = 0.4
+        self._sfx_enabled = True
+        self._sfx_dir = (PROJ_ROOT / "assets" / "advice").resolve()
+        self._sfx_volume = 0.85
+        self._sfx_cache: dict[str, QSoundEffect] = {}
+        self._sfx_custom_map: dict[str, str] = {}
 
     def _init_per_stats(self):
         self._exercise_order = list(EXERCISE_ORDER)
@@ -254,6 +266,16 @@ class ExercisePage(PageBase):
 
     def _poll_tsv(self):
         try:
+           
+            current_label = self._last_label or "idle"
+            show_values = (current_label == "스쿼트" or current_label.lower() == "squat")
+
+            if not show_values:
+                self.ai_panel.set_ai(fi_l=None, fi_r=None, stage_l=None, stage_r=None,
+                                    bi=None, bi_stage=None, bi_text=None)
+                self.ai_panel.set_imu(tempo_score=None, tempo_level=None, imu_state=None)
+                return 
+
             if PRED_TSV.exists():
                 sz = PRED_TSV.stat().st_size
                 if sz != self._last_pred_size and sz > 0:
@@ -324,9 +346,10 @@ class ExercisePage(PageBase):
         if not hasattr(self.ctx, "cam") or self.ctx.cam is None:
             self.ctx.cam = HailoCamAdapter()
         self.ctx.cam.start()
-
+        print("[ExercisePage 임정민2] cam started")
         self._start_service_if_needed()
-
+        
+        
         self._active = True
         if self.timer.isActive():
             self.timer.stop()
@@ -484,6 +507,13 @@ class ExercisePage(PageBase):
 
         if res.advice:
             self.panel.set_advice(res.advice)
+             # --- 점수에 따른 SFX 재생 (선택) ---
+        if res.score is not None:
+            try:
+                _text_unused, _bucket, sfx_key = get_advice_with_sfx(label, int(res.score), ctx=None)
+                self._play_sfx(sfx_key)
+            except Exception as e:
+                print("[SFX] error:", e)
         if res.rep_inc:
             self.reps += res.rep_inc
             if hasattr(self.card, "set_count"):
@@ -535,3 +565,55 @@ class ExercisePage(PageBase):
 
         self.ai_panel.set_imu(tempo_score=None, tempo_level=None, imu_state=None)
         self.ai_panel.set_ai(fi_l=None, fi_r=None, stage_l=None, stage_r=None, bi=None, bi_stage=None, bi_text=None)
+
+    def _resolve_sfx_path(self, sfx_key: str) -> str | None:
+        print(f"[음성파일  실행여부]")
+        if not sfx_key:
+            return None
+        # 1) 사용자 지정 매핑 우선
+        if sfx_key in self._sfx_custom_map:
+            p = Path(self._sfx_custom_map[sfx_key]).expanduser().resolve()
+            return p.as_posix() if p.exists() else None
+        # 2) 기본 규칙: app/assets/advice/{sfx_key}.wav
+        cand = self._sfx_dir / f"{sfx_key}.wav"
+        return cand.as_posix() if cand.exists() else None
+
+    def _play_sfx(self, sfx_key: str):
+        if not self._sfx_enabled or not sfx_key:
+            return
+        now = time.time()
+        if (self._last_sfx_key == sfx_key) and (now - self._last_sfx_ts < self._SFX_COOLDOWN_SEC):
+            return
+
+        # 이미 재생 중이라면 새 요청은 무시 (2회차 무시용)
+        for eff in self._sfx_cache.values():
+            try:
+                if eff.isPlaying():
+                    print(f"[SFX] busy → skip '{sfx_key}'")
+                    # 재생 중엔 skip, 다음 요청만 기다림
+                    return
+            except Exception:
+                pass
+        
+        
+        path = self._resolve_sfx_path(sfx_key)
+        if not path:
+            
+            return
+        
+
+
+        eff = self._sfx_cache.get(path)
+        if eff is None:
+            eff = QSoundEffect(self)
+            eff.setSource(QUrl.fromLocalFile(path))
+            eff.setLoopCount(1)
+            eff.setVolume(self._sfx_volume)  # 0.0~1.0
+            self._sfx_cache[path] = eff
+
+        #eff.stop()
+        eff.play()
+        print(f"[음성파일] playing: key={sfx_key}, file={path}")
+
+        self._last_sfx_key = sfx_key
+        self._last_sfx_ts = time.time()                   
