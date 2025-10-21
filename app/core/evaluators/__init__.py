@@ -1,14 +1,18 @@
-# app/core/evaluators/__init__.py
 from __future__ import annotations
 from typing import Optional
 from .base import EvalResult, ExerciseEvaluator
 
-__all__ = [
-    "get_evaluator_by_label",
-    "EvalResult",
-    "ExerciseEvaluator",
-]
+def get_advice_with_sfx(*args, **kwargs):
+    from importlib import import_module
+    mod = import_module(".advice", __package__)  
+    return mod.get_advice_with_sfx(*args, **kwargs)
 
+__all__ = [
+    "compute_joint_angles", "update_meta_with_angles",
+    "ExerciseEvaluator", "EvalResult",
+    "get_evaluator_by_label",
+    "get_advice_with_sfx",
+]
 # ---- 라벨 별칭(한글/대소문자/공백/대시 호환) ----
 _ALIAS = {
     # 하체
@@ -61,16 +65,16 @@ def _create_instance(key: str) -> ExerciseEvaluator:
             from .core_full import CoreBodyEvaluator 
         except Exception as e:
             raise ImportError(f"CoreFullEvaluator 로드 실패: {e}")
-        # 라벨 하드코딩 금지: 그대로 전달해야 코어 내부에서 분기 가능
         return CoreBodyEvaluator(key)
 
-    # 상체 (pushup은 코어로 이동시켰음)
+    # 상체 
     if key in ("shoulder_press", "side_lateral_raise", "Bentover_Dumbbell", "bentover_dumbbell"):
         from .upper_body import UpperBodyEvaluator
         return UpperBodyEvaluator(key)
 
     # 알 수 없는 라벨
     raise KeyError(f"Unknown evaluator label: {key}")
+
 def get_evaluator_by_label(label: str) -> Optional[ExerciseEvaluator]:
     """운동 라벨로 평가기 싱글톤을 반환 (지연 import/생성)."""
     if not label:

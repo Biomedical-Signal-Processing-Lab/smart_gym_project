@@ -1,22 +1,18 @@
-# app/core/evaluators/base.py
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
 from abc import ABC, abstractmethod
-from PySide6.QtGui import QColor
-
 
 @dataclass
 class EvalResult:
     """
     모든 운동 평가기가 매 프레임마다 반환하는 공통 결과 형식.
-    exercise_page는 이 값을 받아 UI(카운트/점수/조언/색/제목)를 갱신한다.
+    exercise_page는 이 값을 받아 UI(카운트/점수/조언/제목)를 갱신한다.
     """
     rep_inc: int = 0                  # 이번 프레임에서 증가한 횟수 (0 또는 1)
     score: Optional[int] = None       # 점수(0~100 등급) - rep 완료 시 주로 설정
     advice: Optional[str] = None      # 피드백 문구
-    color: Optional[QColor] = None    # 점수 오버레이 색상(QColor)
     title: Optional[str] = None       # 운동 제목 제안(라벨 표시용)
 
 
@@ -38,14 +34,12 @@ class ExerciseEvaluator(ABC):
         ...
 
     @abstractmethod
-    def update(self, meta: Dict[str, Any]) -> EvalResult:
+    def update(self, meta: Dict[str, Any]) -> Optional[EvalResult]:
         """
         매 프레임 호출. 카메라/모션 인식 메타(meta)를 바탕으로
         카운트/점수/피드백을 산출하고 EvalResult를 반환한다.
         """
         ...
-
-    # ===== 아래는 선택적 공통 유틸(원하면 하위 클래스에서 활용) =====
 
     # 선형 보간(스코어 계산 등에 사용 가능)
     def _lerp(self, a: float, b: float, t: float) -> float:
@@ -59,13 +53,3 @@ class ExerciseEvaluator(ABC):
         if s > 100:
             return 100
         return int(round(s))
-
-    # 점수 → 대략적 색상 매핑(원하면 하위에서 재정의)
-    def _color_by_score(self, score: int) -> QColor:
-        if score >= 90:
-            return QColor(0, 200, 0)         # 초록
-        if score >= 70:
-            return QColor(255, 215, 0)       # 골드/노랑
-        if score >= 50:
-            return QColor(255, 140, 0)       # 오렌지
-        return QColor(255, 0, 0)             # 빨강

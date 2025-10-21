@@ -1,4 +1,3 @@
-# app/core/evaluators/pose_angles.py
 from __future__ import annotations
 from typing import Dict, Optional
 import numpy as np
@@ -9,9 +8,7 @@ __all__ = [
     "update_meta_with_angles",
 ]
 
-# -----------------------
 # 내부 유틸
-# -----------------------
 def _is_finite_number(x) -> bool:
     try:
         return math.isfinite(float(x))
@@ -76,9 +73,6 @@ def _hip_line_angle(hip: np.ndarray, knee: np.ndarray) -> Optional[float]:
     except Exception:
         return None
 
-# -----------------------
-# 공개 API
-# -----------------------
 def compute_joint_angles(
     kxy: np.ndarray,
     kcf: np.ndarray,
@@ -92,7 +86,6 @@ def compute_joint_angles(
       - 표기용 키: "Knee(L)", "Knee(R)", ..., "HipLine(R)"
         (값 없으면 None; NaN 사용 안 함)
     """
-    # 형식 방어
     kxy = np.asarray(kxy, dtype=np.float64)
     kcf = np.asarray(kcf, dtype=np.float64)
     if kxy.ndim != 2 or kxy.shape[1] != 2 or kcf.ndim != 1:

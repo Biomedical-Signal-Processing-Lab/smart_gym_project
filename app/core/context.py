@@ -1,4 +1,3 @@
-# core/context.py
 import os
 from core.hailo_cam_adapter import HailoCamAdapter  
 from core.face_service import FaceService

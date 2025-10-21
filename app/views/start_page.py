@@ -1,4 +1,3 @@
-# start_page.py 
 import os
 from PySide6.QtWidgets import (
     QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QStackedLayout,
@@ -142,7 +141,6 @@ class StartPage(PageBase):
         face_row.setContentsMargins(0, 0, 0, 0)
         face_row.setSpacing(0)
 
-        # 이모지 대신 이미지 라벨 (텍스트는 fallback)
         self.face_icon = QLabel("")
         self.face_icon.setObjectName("FaceIcon")
         self.face_icon.setAlignment(Qt.AlignCenter)
@@ -161,7 +159,7 @@ class StartPage(PageBase):
         bottom_lay.setSpacing(0)
 
         self.status_label = QLabel("")
-        self.lbl_status = self.status_label  # 기존 이름 호환
+        self.lbl_status = self.status_label 
         self.status_label.setObjectName("Status")
         self.status_label.setAlignment(Qt.AlignHCenter)
         self.status_label.setWordWrap(False)
@@ -206,7 +204,6 @@ class StartPage(PageBase):
 
         return panel
 
-    # ========= Styles =========
     def _stylesheet(self) -> str:
         return """
         #StartPageRoot { background: transparent; }
