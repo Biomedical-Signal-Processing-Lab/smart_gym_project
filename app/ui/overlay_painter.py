@@ -1,7 +1,5 @@
-# ui/overlay_painter.py
-from dataclasses import dataclass, field
 from typing import Optional
-from PySide6.QtCore import Qt, QSize, QRect, Signal, QObject, QEvent
+from PySide6.QtCore import Qt, QSize, QRect, Signal
 from PySide6.QtWidgets import QWidget, QLabel, QGridLayout, QHBoxLayout, QVBoxLayout, QPushButton
 from PySide6.QtGui import QImage, QPixmap
 
@@ -465,16 +463,17 @@ class AIMetricsPanel(QWidget):
             return "-"
 
     def set_imu(self, user_id=None, tempo_score=None, tempo_level=None, imu_state=None):
-        if tempo_score is not None: self._cells["tempo_score"].setText(str(int(tempo_score)))
-        if tempo_level is not None: self._cells["tempo_level"].setText(str(tempo_level))
-        if imu_state is not None:   self._cells["imu_state"].setText(str(imu_state))
+        self._cells["tempo_score"].setText("-" if tempo_score is None else str(int(tempo_score)))
+        self._cells["tempo_level"].setText("-" if tempo_level is None else str(tempo_level))
+        self._cells["imu_state"].setText("-" if imu_state is None else str(imu_state))
 
     def set_ai(self, fi_l=None, fi_r=None, stage_l=None, stage_r=None,
-               bi=None, bi_stage=None, bi_text=None):
-        if fi_l is not None:     self._cells["fi_l"].setText(self._fmt_num(fi_l))
-        if fi_r is not None:     self._cells["fi_r"].setText(self._fmt_num(fi_r))
-        if stage_l is not None:  self._cells["stage_l"].setText(str(stage_l))
-        if stage_r is not None:  self._cells["stage_r"].setText(str(stage_r))
-        if bi is not None:       self._cells["bi"].setText(self._fmt_num(bi))
-        if bi_stage is not None: self._cells["bi_stage"].setText(str(bi_stage))
-        if bi_text is not None:  self._cells["bi_text"].setText(str(bi_text))
+            bi=None, bi_stage=None, bi_text=None):
+        self._cells["fi_l"].setText(self._fmt_num(fi_l) if fi_l is not None else "-")
+        self._cells["fi_r"].setText(self._fmt_num(fi_r) if fi_r is not None else "-")
+        self._cells["stage_l"].setText(str(stage_l) if stage_l is not None else "-")
+        self._cells["stage_r"].setText(str(stage_r) if stage_r is not None else "-")
+        self._cells["bi"].setText(self._fmt_num(bi) if bi is not None else "-")
+        self._cells["bi_stage"].setText(str(bi_stage) if bi_stage is not None else "-")
+        self._cells["bi_text"].setText(str(bi_text) if bi_text is not None else "-")
+

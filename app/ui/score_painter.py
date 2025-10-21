@@ -1,4 +1,3 @@
-# ui/score_painter.py
 from PySide6.QtWidgets import QWidget, QLabel, QGraphicsOpacityEffect
 from PySide6.QtCore import Qt, QPoint, QPropertyAnimation, QEasingCurve, QVariantAnimation
 from PySide6.QtGui import QColor

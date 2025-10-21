@@ -1,4 +1,3 @@
-# core/evaluators/core_full.py
 from __future__ import annotations
 from typing import Dict, Any, Optional
 import math

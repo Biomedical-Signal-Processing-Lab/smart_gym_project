@@ -1,4 +1,3 @@
-# core/router.py
 from PySide6.QtWidgets import QStackedWidget
 
 # 페이지 등록/전환 관리

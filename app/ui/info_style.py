@@ -1,7 +1,6 @@
-# ui/styles.py
 from PySide6.QtWidgets import QWidget
 
-# (토큰) 색/타이포 일괄 정의
+# 색/타이포 일괄 정의
 TOKENS = {
     "bg_app":      "#f5f8ff",
     "fg_text":     "#465065",

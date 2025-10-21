@@ -208,7 +208,6 @@ class LowerBodyEvaluator(ExerciseEvaluator):
         advice = get_advice("leg_raise", score, ctx)
         return score, used, advice
 
-    # ---------- 공개 API ----------
     def update(self, meta: Dict[str, Any]) -> Optional[EvalResult]:
         label = meta.get("label")
         _dbg(

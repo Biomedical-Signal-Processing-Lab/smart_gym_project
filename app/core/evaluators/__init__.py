@@ -1,11 +1,10 @@
-# app/core/evaluators/__init__.py
 from __future__ import annotations
 from typing import Optional
 from .base import EvalResult, ExerciseEvaluator
 
 def get_advice_with_sfx(*args, **kwargs):
     from importlib import import_module
-    mod = import_module(".advice", __package__)  # core.evaluators.advice
+    mod = import_module(".advice", __package__)  
     return mod.get_advice_with_sfx(*args, **kwargs)
 
 __all__ = [
@@ -66,10 +65,9 @@ def _create_instance(key: str) -> ExerciseEvaluator:
             from .core_full import CoreBodyEvaluator 
         except Exception as e:
             raise ImportError(f"CoreFullEvaluator 로드 실패: {e}")
-        # 라벨 하드코딩 금지: 그대로 전달해야 코어 내부에서 분기 가능
         return CoreBodyEvaluator(key)
 
-    # 상체 (pushup은 코어로 이동시켰음)
+    # 상체 
     if key in ("shoulder_press", "side_lateral_raise", "Bentover_Dumbbell", "bentover_dumbbell"):
         from .upper_body import UpperBodyEvaluator
         return UpperBodyEvaluator(key)

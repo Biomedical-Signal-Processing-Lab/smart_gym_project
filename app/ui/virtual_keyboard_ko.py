@@ -1,4 +1,3 @@
-# widgets/virtual_keyboard_ko.py
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QWidget, QGridLayout, QPushButton, QVBoxLayout, QHBoxLayout,

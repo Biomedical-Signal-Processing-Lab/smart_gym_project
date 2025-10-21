@@ -1,10 +1,9 @@
-# ExercisePage.py 
 import time
-import os, shlex, subprocess, signal
-from pathlib import Path
 import cv2
-import numpy as np
 import sys
+import os, subprocess, signal
+import numpy as np
+from pathlib import Path
 from datetime import datetime
 
 from PySide6.QtCore import QTimer ,QUrl
@@ -15,13 +14,12 @@ from PySide6.QtMultimedia import QSoundEffect
 from core.evaluators.pose_angles import update_meta_with_angles
 from core.page_base import PageBase
 from core.hailo_cam_adapter import HailoCamAdapter
+from core.evaluators import get_evaluator_by_label, EvalResult, ExerciseEvaluator, get_advice_with_sfx  
 
 from ui.overlay_painter import VideoCanvas, ExerciseCard, ScoreAdvicePanel, ActionButtons  
 from ui.score_painter import ScoreOverlay
-
 from ui.overlay_painter import VideoCanvas, ExerciseCard, ScoreAdvicePanel, ActionButtons, AIMetricsPanel
-from core.evaluators import get_evaluator_by_label, EvalResult, ExerciseEvaluator, get_advice_with_sfx  
- 
+
 PROJ_ROOT = Path("~/workspace/python/smart_gym_project/app").expanduser().resolve()
 
 SERVICE_CMD_FIXED = (
@@ -266,9 +264,8 @@ class ExercisePage(PageBase):
 
     def _poll_tsv(self):
         try:
-           
-            current_label = self._last_label or "idle"
-            show_values = (current_label == "스쿼트" or current_label.lower() == "squat")
+            current_label = self._last_eval_label or "idle"
+            show_values = (current_label == "squat")
 
             if not show_values:
                 self.ai_panel.set_ai(fi_l=None, fi_r=None, stage_l=None, stage_r=None,
@@ -435,7 +432,6 @@ class ExercisePage(PageBase):
             try:
                 bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
                 people = self.ctx.cam.people()
-                # skeleton draw preserved
                 EDGES = [(5,7),(7,9),(6,8),(8,10),(5,6),(11,12),(5,11),(6,12),(11,13),(13,15),(12,14),(14,16)]
                 if people:
                     H, W = bgr.shape[:2]
@@ -452,7 +448,6 @@ class ExercisePage(PageBase):
                                 if (dx*dx + dy*dy) <= max_len2:
                                     cv2.line(bgr, (x1_,y1_), (x2_,y2_), LINE_COLOR, 2)
 
-                # angles (kept for evaluator usage even if panel removed)
                 try:
                     if people:
                         kpt = people[0].get("kpt", [])
@@ -492,7 +487,13 @@ class ExercisePage(PageBase):
         if self._last_eval_label != label:
             self._last_eval_label = label
             self._evaluator = get_evaluator_by_label(label) if label not in (None, "idle") else None
-            if self._evaluator: self._evaluator.reset()
+            if self._evaluator: 
+                self._evaluator.reset()
+
+            if label != "squat":
+                self.ai_panel.set_ai(fi_l=None, fi_r=None, stage_l=None, stage_r=None,
+                                    bi=None, bi_stage=None, bi_text=None)
+                self.ai_panel.set_imu(tempo_score=None, tempo_level=None, imu_state=None)
 
         if label in (None, "idle") or not self._evaluator:
             self.panel.set_advice("올바른 자세로 준비하세요.")

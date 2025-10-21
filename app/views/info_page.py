@@ -1,4 +1,3 @@
-# views/info_page.py
 import traceback
 from datetime import datetime, timedelta
 from collections import defaultdict
@@ -138,8 +137,8 @@ class _AnalysisPanel(QFrame):
         cap1.setProperty("cls", "title")
         lay.addWidget(cap1)
 
-        self.bar_left  = _HBar("왼쪽",  "#0ea5e9")  # 푸른계열
-        self.bar_right = _HBar("오른쪽", "#34d399") # 초록계열
+        self.bar_left  = _HBar("왼쪽",  "#0ea5e9")  
+        self.bar_right = _HBar("오른쪽", "#34d399") 
         lay.addWidget(self.bar_left)
         lay.addWidget(self.bar_right)
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 import json, time, threading
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 ROOT = Path(__file__).resolve().parents[2]  
 ANGLE_JSON = ROOT / "data" / "angle_data.json"
@@ -67,7 +67,6 @@ class DynamicSchema:
         with self._lock:
             return dict(self._schema)
 
-# 섹션별 싱글턴 레지스트리
 _REGISTRY: Dict[str, DynamicSchema] = {}
 
 def get_dynamic_schema(section: str, default_schema: Dict[str, Any]) -> DynamicSchema:
