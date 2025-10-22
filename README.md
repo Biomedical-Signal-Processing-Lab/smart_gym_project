@@ -144,7 +144,7 @@ git clone https://github.com/Biomedical-Signal-Processing-Lab/smart_gym_project.
 
 ## ⚙️ **Steps to Build**
 
-```bash
+```
 # 0) 기본 설정
 sudo apt update
 sudo apt install -y git curl wget build-essential pkg-config
@@ -171,9 +171,9 @@ sudo apt install -y \
 # 4) 카메라 유틸리티 설치
 sudo apt install -y v4l-utils libcamera-apps
 
-
-▶️ Step to Run
-
+```
+## ▶️ **Step to Run**
+```
 # 1) 가상환경 활성화
 source .sgym_venv/bin/activate
 
@@ -187,10 +187,12 @@ python main.py
 > 첫 실행 시 `.venv` 환경을 다시 활성화해야 합니다:  
 > ```bash
 > source .sgym_venv/bin/activate
-> ```  
+> 
 > 실행 후 UI 창이 뜨면, 센서 연결 상태와 카메라 입력이 정상 동작하는지 로그를 확인하세요.
 
 ---
 
-# 4) 카메라 유틸리티 설치
+# 3) 카메라 유틸리티 설치
 sudo apt install -y v4l-utils libcamera-apps
+```
+
