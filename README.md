@@ -65,8 +65,8 @@ EMG·IMU 센서 융합 파워리프팅 스쿼트 분석까지 지원하는 파�
 - 센서 기반 **운동 품질 평가 로직 설계**
 
 ### 🔹 센서 하드웨어 수집
-- IMU, EMG, Force Sensor 등 **실시간 수집**
-- I2C / SPI / UART 통신, 노이즈 필터링·캘리브레이션
+- IMU, EMG 등 **실시간 수집**
+- BLE/UART 통신, ADC,노이즈 필터링·캘리브레이션
 
 ### 🔹 통합 어플리케이션
 - AI + 알고리즘 + 센서 모듈 통합
@@ -78,7 +78,6 @@ EMG·IMU 센서 융합 파워리프팅 스쿼트 분석까지 지원하는 파�
 
 <img width="839" height="430" alt="image" src="https://github.com/user-attachments/assets/97e1d978-0dcd-4460-b81d-8fe5502806a3" />
 <img width="861" height="485" alt="image" src="https://github.com/user-attachments/assets/eeaca896-b994-43b9-892b-fadff9362e0d" />
-
 
 
 
