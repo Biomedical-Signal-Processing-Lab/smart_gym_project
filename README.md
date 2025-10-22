@@ -200,7 +200,6 @@ sudo apt install -y v4l-utils libcamera-apps
 
 운동 분류 시스템은 **포즈 랜드마크 추출 → 시퀀스 분류 → (상세 분석) → (후속 처리)** 순서로 동작합니다.
 
----
 
 ### **1. 영상 입력·전처리 (Raspberry Pi 5 + Hailo-8)**
 
