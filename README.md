@@ -77,8 +77,8 @@ EMG·IMU 센서 융합 파워리프팅 스쿼트 분석까지 지원하는 파�
 ## 🖥️ **시스템 구성도**
 
 <img width="839" height="430" alt="image" src="https://github.com/user-attachments/assets/97e1d978-0dcd-4460-b81d-8fe5502806a3" />
-  <img width="600" src="https://github.com/user-attachments/assets/0876492a-0212-499d-b1fa-2304882e3de1" alt="hardware diagram"/>
-</p>
+<img width="861" height="485" alt="image" src="https://github.com/user-attachments/assets/eeaca896-b994-43b9-892b-fadff9362e0d" />
+
 
 
 
