@@ -104,7 +104,8 @@
 | 프론트엔드 / 앱 | PySide6, BLE 통신, Python |
 | 기타 | YAML Config, CSV/JSON Logging |
 
-<p align="center"> <img src="https://skillicons.dev/icons?i=python,pytorch,raspberrypi,arduino,opencv,linux" height="45" /> <img src="https://upload.wikimedia.org/wikipedia/commons/2/21/PySide_logo.png" height="45" alt="PySide6" /> <img src="https://hailo.ai/wp-content/uploads/2023/04/hailo-logo.svg" height="45" alt="Hailo" /> <img src="https://onnxruntime.ai/images/onnxruntime-logo.svg" height="45" alt="ONNX Runtime" /> </p><img width="672" height="743" alt="image" src="https://github.com/user-attachments/assets/1a81cf54-a48c-412e-bd5c-bec7453a8d94" /><img width="874" height="515" alt="image" src="https://github.com/user-attachments/assets/0876492a-0212-499d-b1fa-2304882e3de1" />
+<p align="center"> <img src="https://skillicons.dev/icons?i=python,pytorch,raspberrypi,arduino,opencv,linux" height="45" /> <img src="https://upload.wikimedia.org/wikipedia/commons/2/21/PySide_logo.png" height="45" alt="PySide6" /> <img src="https://hailo.ai/wp-content/uploads/2023/04/hailo-logo.svg" height="45" alt="Hailo" /> <img src="https://onnxruntime.ai/images/onnxruntime-logo.svg" height="45" alt="ONNX Runtime" /> <img width="1217" height="657" alt="image" src="https://github.com/user-attachments/assets/18c66f81-7b4d-4bad-86aa-9a49e9cd3659" /></p><img width="874" height="515" alt="image" src="https://github.com/user-attachments/assets/0876492a-0212-499d-b1fa-2304882e3de1" />
+
 
 ---
 
