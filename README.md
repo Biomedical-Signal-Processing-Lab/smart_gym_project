@@ -232,7 +232,7 @@ sudo apt install -y v4l-utils libcamera-apps
 - 점수 산출: 한 동작의 인식 가동 범위 내에서 최고 혹은 최저 각으로 산출  
 
 ---
-## 🧠 근전도·IMU 기반 운동 분석 시스템
+## 🧠 근전도·IMU 기반 운동 상세 분석 시스템
 
 운동 분석 시스템은 **센서 데이터 수집 → 전처리 → 전송 → 신호 분석 → AI 추론** 단계로 동작합니다.  
 본 시스템은 **좌·우 허벅지의 근전도(EMG)** 와 **IMU 센서 데이터**를 융합하여  
@@ -301,6 +301,9 @@ sudo apt install -y v4l-utils libcamera-apps
 - PyQt 대시보드에서 게이지/그래프 형태로 표시  
 - 결과는 `.tsv` 형식(`window_features.tsv`, `reps_pred_dual.tsv`)으로 자동 저장
 
+### 7. 웨어러블 케이스 모델링
+-<img width="933" height="720" alt="KakaoTalk_20251020_162429189" src="https://github.com/user-attachments/assets/9054e5da-003e-4bd8-bc49-f5ee3520f88c" />
+
 
 ### 🧠 요약
 - **FI (Fatigue Index)** → 근육 피로 누적 정도  
@@ -341,6 +344,8 @@ AI Smart Gym 프로젝트는 라즈베리파이5와 Hailo-8을 이용해 실시�
 
 ## 📎 **Appendix**
 
-[피로도 분석 논문.pdf](https://github.com/user-attachments/files/23041197/default.pdf)
+[피로도 분석 논문1.pdf](https://github.com/user-attachments/files/23041197/default.pdf)
+[피로도 분석 논문2.pdf](https://github.com/user-attachments/files/23042535/default.pdf)
+[피로도 분석 논문3.pdf](https://github.com/user-attachments/files/23042548/s41598-019-41860-4.pdf)
 
 
