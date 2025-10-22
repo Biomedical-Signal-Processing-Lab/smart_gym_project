@@ -75,8 +75,8 @@
 ---
 
 ## **시스템 구성도**
-
-<p align="center"> <img src="assets/system_architecture.png" alt="System Architecture" width="85%"> </p>
+<img width="1217" height="657" alt="image" src="https://github.com/user-attachments/assets/18c66f81-7b4d-4bad-86aa-9a49e9cd3659" /><
+<img width="874" height="515" alt="image" src="https://github.com/user-attachments/assets/0876492a-0212-499d-b1fa-2304882e3de1" />
 
 ---
 
@@ -99,14 +99,28 @@
 | **분야** | **기술 스택** |
 | --- | --- |
 | AI / ML | PyTorch, ONNX, TCN |
-| 임베디드 | Raspberry Pi, Hailo-8 |
-| 센서 | IMU, EMG, Load Cell, Force Sensor |
+| 임베디드 | Arduino,Raspberry Pi, Hailo-8 |
+| 센서 | IMU, EMG|
 | 프론트엔드 / 앱 | PySide6, BLE 통신, Python |
-| 기타 | YAML Config, CSV/JSON Logging |
+| 기타 | YAML Config, CSV/JSON Logging, AUTODESK FUSION 360 |
+<p align="center">
+  <!-- Devicon -->
+  <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/python/python-original.svg" width="48" />
+  <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/pytorch/pytorch-original.svg" width="48" />
+  <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/raspberrypi/raspberrypi-original.svg" width="48" />
+  <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/arduino/arduino-original.svg" width="48" />
+  <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/opencv/opencv-original.svg" width="48" />
+  <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/linux/linux-original.svg" width="48" />
 
-<p align="center"> <img src="https://skillicons.dev/icons?i=python,pytorch,raspberrypi,arduino,opencv,linux" height="45" /> <img src="https://upload.wikimedia.org/wikipedia/commons/2/21/PySide_logo.png" height="45" alt="PySide6" /> <img src="https://hailo.ai/wp-content/uploads/2023/04/hailo-logo.svg" height="45" alt="Hailo" /> <img src="https://onnxruntime.ai/images/onnxruntime-logo.svg" height="45" alt="ONNX Runtime" /> <img width="1217" height="657" alt="image" src="https://github.com/user-attachments/assets/18c66f81-7b4d-4bad-86aa-9a49e9cd3659" /></p><img width="874" height="515" alt="image" src="https://github.com/user-attachments/assets/0876492a-0212-499d-b1fa-2304882e3de1" />
+ 
+  <img src="https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/qt.svg" width="48" title="PySide6 (Qt for Python)"/>
+  
+  <img src="https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/onnx.svg" width="48" title="ONNX Runtime"/>
 
-
+ 
+  <img src="https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/autodesk.svg" width="48" title="Autodesk Fusion 360"/>
+  
+  <a href="https://hailo.ai/" title="Hailo"><img src="https://img.shields.io/badge/Hailo-000?style=for-the-badge" height="24"/></a>
 ---
 
 ## **기대 효과**
@@ -209,13 +223,11 @@ python main.py
 - 점수 산출: 한 동작의 인식 가동 범위 내에서 최고혹은 최저 각으로 산출
 
 
-
-
 ## 운동 분석 시스템
 운동 분석 시스템은 **센서 데이터 수짐 → 전처리 → 전송 → 신호 분석 → 추론
 - arduino 33 iot 에서 근전도 센서 2개와 imu센서 데이터 수집
 ## 2 전처리
-- 
+-
 - 
 - 
 ## 3 데이터 전송
@@ -235,7 +247,6 @@ python main.py
 - AI + 센서 융합을 통한 스마트 피트니스 솔루션 실현
 - 실시간 채점 및 시각화로 재미 향상
 
----
 
 ## **시행착오 및 해결방안**
 
