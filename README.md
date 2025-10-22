@@ -232,28 +232,83 @@ sudo apt install -y v4l-utils libcamera-apps
 - 점수 산출: 한 동작의 인식 가동 범위 내에서 최고 혹은 최저 각으로 산출  
 
 ---
+## 🧠 근전도·IMU 기반 운동 분석 시스템
 
-## 🧠 **운동 분석 시스템**
+운동 분석 시스템은 **센서 데이터 수집 → 전처리 → 전송 → 신호 분석 → AI 추론** 단계로 동작합니다.  
+본 시스템은 **좌·우 허벅지의 근전도(EMG)** 와 **IMU 센서 데이터**를 융합하여  
+운동 중 **피로도(Fatigue Index, FI)** 와 **불균형도(Balance Index, BI)**,  
+그리고 **템포 일관성(Tempo Consistency)** 을 분석합니다.
 
-운동 분석 시스템은 **센서 데이터 수집 → 전처리 → 전송 → 신호 분석 → 추론** 단계로 동작합니다.
 
-- Arduino Nano 33 IoT에서 근전도(EMG) 센서 2개와 IMU 센서 데이터 수집  
+### 1. 데이터 수집
+- **Arduino Nano 33 IoT (2대)** 사용  
+- 좌/우 허벅지 근전도(EMG) 센서 각 1개 연결  
+- IMU(가속도계/자이로)로 하강·상승 동작 구분 및 템포 계산  
+- 샘플링 속도: EMG 500Hz, IMU 10Hz
 
-### **2. 전처리**
-- (작성 예정)
 
-### **3. 데이터 전송**
-- 블루투스로 전송  
+### 2. 전처리
+- Arduino 단에서 **EMG 필터링 및 정규화(DC offset 제거)**  
+- IMU를 이용한 **하강/상승 구간 분리 및 템포 추출**  
+- 3초간 MVC(Maximum Voluntary Contraction) 측정을 통한 **근수축 기준 정규화**
 
-### **4. 신호 분석**
-- (작성 예정)
 
-### **5. 추론**
-- (작성 예정)
+### 3. 데이터 전송
+- BLE(Bluetooth Low Energy)를 이용해 라즈베리파이로 전송  
+- 좌측(NANO33_L), 우측(NANO33_R) 장치로 구분  
+- 전송 데이터:  
+  - `EMG_preprocessed`, `IMU_pitch`, `tempo`, `rep_id`
 
----
 
-## 🏁 **프로젝트 결과**
+### 4. 신호 분석
+- Raspberry Pi에서 실시간 분석 수행  
+- FFT 기반 주파수 도메인 특징 및 시간 도메인 특징 추출  
+
+| 특징값 | 의미 | 피로 시 변화 |
+|:---|:---|:---|
+| **RMS_norm** | 근육 수축 세기(정규화 RMS) | ⬇️ 감소 |
+| **MDF** | 스펙트럼 중심 주파수 | ⬇️ 저주파 쪽 이동 |
+| **SampEn** | 신호의 불규칙성(복잡도) | ⬇️ 더 규칙적 |
+| **MSESEn** | 여러 시간 스케일에서의 복잡도 | ⬇️ 장·단기 패턴 단순화 |
+| **iEMG_norm** | EMG 적분값(활동량) | ⬇️ 활성 근섬유 감소 |
+| **tempo_cv** | 스쿼트 템포의 변동성(속도 일관성 지표) | ⬆️ 증가 시 불균일한 리듬 |
+
+
+### 5. AI 추론
+#### 🧩 멀티태스크 AI 모델 (Multi-Task MLP)
+- 입력: `[RMS_norm, MDF, SampEn, MSESEn, iEMG_norm, tempo_cv]`
+- 출력:
+  - **FI_pred**: 피로도 (Fatigue Index, 0~1)
+  - **BI_pred**: 불균형도 (Balance Index, 0~1)
+- 구조:
+  - Dense(32) → ReLU → Dense(16) → 공유층  
+  - Head1(FI): Dense(8) → Sigmoid  
+  - Head2(BI): Dense(8) → Sigmoid  
+- 손실 함수:  
+  `Loss = α·MSE(FI_pred, FI_label) + β·MSE(BI_pred, BI_label)`
+
+#### ⚖️ 보조 계산 지표
+| 항목 | 계산식 | 의미 |
+|:---|:---|:---|
+| **AIF** | \|FI_L - FI_R\| | 피로 누적 불균형 |
+| **AI_RMS** | \|RMS_L - RMS_R\| | 좌·우 근수축 세기 차이 |
+| **AI_iEMG** | \|iEMG_L - iEMG_R\| | 좌·우 근육 활성 차이 |
+| **BI (최종)** | 0.4×AI_RMS + 0.4×AI_iEMG + 0.2×AIF | 종합 불균형 점수 |
+
+
+### 6. 출력 및 시각화
+- **FI, BI, tempo_cv** 값을 실시간으로 시각화  
+- PyQt 대시보드에서 게이지/그래프 형태로 표시  
+- 결과는 `.tsv` 형식(`window_features.tsv`, `reps_pred_dual.tsv`)으로 자동 저장
+
+
+### 🧠 요약
+- **FI (Fatigue Index)** → 근육 피로 누적 정도  
+- **BI (Balance Index)** → 좌우 근육 사용의 불균형 정도  
+- **tempo_cv** → 스쿼트 속도의 일관성 (리듬 안정성)
+- 세 지표를 통해 운동자의 **피로도, 균형, 리듬**을 동시에 평가합니다.
+
+
 
 ### **기대 효과**
 
