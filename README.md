@@ -139,5 +139,58 @@ EMG·IMU 센서 융합 파워리프팅 스쿼트 분석까지 지원하는 파�
 ---
 
 ## 🧩 **Clone Code**
-```bash
 git clone https://github.com/Biomedical-Signal-Processing-Lab/smart_gym_project.git
+
+
+## ⚙️ **Steps to Build**
+
+```bash
+# 0) 기본 설정
+sudo apt update
+sudo apt install -y git curl wget build-essential pkg-config
+python -m venv .sgym_venv
+source .sgym_venv/bin/activate
+cd smart_gym_project/app
+pip install -r requirements.txt
+
+# 1) Hailo (공식 APT 레포 추가 후 설치)
+# ⚠️ 반드시 벤더 문서 절차에 따라 레포를 먼저 등록해야 합니다.
+sudo apt install -y hailo-all
+
+# 2) GStreamer 런타임 + 플러그인 묶음
+sudo apt install -y \
+  gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+  gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav \
+  gstreamer1.0-gl gstreamer1.0-alsa
+
+# 3) GI(PyGObject) 바인딩 (Python에서 GStreamer를 사용하는 경우)
+sudo apt install -y \
+  python3-gi python3-gi-cairo gobject-introspection \
+  gir1.2-gstreamer-1.0 gir1.2-gst-plugins-base-1.0 libgirepository1.0-dev
+
+# 4) 카메라 유틸리티 설치
+sudo apt install -y v4l-utils libcamera-apps
+
+
+▶️ Step to Run
+
+# 1) 가상환경 활성화
+source .sgym_venv/bin/activate
+
+# 2) 프로젝트 실행
+python main.py
+
+
+---
+
+> 💡 **Tip:**  
+> 첫 실행 시 `.venv` 환경을 다시 활성화해야 합니다:  
+> ```bash
+> source .sgym_venv/bin/activate
+> ```  
+> 실행 후 UI 창이 뜨면, 센서 연결 상태와 카메라 입력이 정상 동작하는지 로그를 확인하세요.
+
+---
+
+# 4) 카메라 유틸리티 설치
+sudo apt install -y v4l-utils libcamera-apps
