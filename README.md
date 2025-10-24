@@ -192,8 +192,7 @@ python main.py
 
 ---
 
-# 3) 카메라 유틸리티 설치
-sudo apt install -y v4l-utils libcamera-apps
+
 ```
 
 ## 🧩 **운동 분류 시스템**
