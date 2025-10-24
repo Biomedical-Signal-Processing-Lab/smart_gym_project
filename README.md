@@ -131,9 +131,10 @@ EMG·IMU 센서 융합 파워리프팅 스쿼트 분석까지 지원하는 파�
 
 ## 🎬 **시연 예시**
 
-<p align="center">
-  <img src="assets/demo.gif" alt="Demo" width="70%">
-</p>
+
+https://github.com/user-attachments/assets/f4ce4fb4-64c6-46c4-88ab-7b38399b903d
+
+
 
 ---
 
